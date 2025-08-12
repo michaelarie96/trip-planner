@@ -5,6 +5,7 @@ require("dotenv").config();
 const connectDB = require("./config/database");
 const authRoutes = require("./routes/auth");
 const routeRoutes = require("./routes/routes");
+const weatherRoutes = require("./routes/weather");
 
 // Initialize Express app
 const app = express();
@@ -29,6 +30,7 @@ app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/routes", routeRoutes);
+app.use("/api/weather", weatherRoutes);
 
 // Basic test route
 app.get("/api/test", (req, res) => {
