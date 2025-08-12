@@ -1,4 +1,5 @@
 const { InferenceClient } = require("@huggingface/inference");
+const imageService = require("./imageService");
 
 class LLMService {
   constructor() {
@@ -54,14 +55,28 @@ class LLMService {
             `Route generated successfully with ${model} in ${processingTime}ms`
           );
 
+          // Try to get a representative image for the country
+          let imageData = null;
+          try {
+            console.log("Fetching country image...");
+            imageData = await imageService.getImage(country, city);
+            console.log("Country image retrieved successfully");
+          } catch (imageError) {
+            console.warn("Failed to get country image:", imageError.message);
+            // Don't fail route generation if image fails
+          }
+
           return {
             ...processedRoute,
+            imageUrl: imageData?.imageUrl || null,
+            imageData: imageData || null,
             generationMetadata: {
               llmModel: model,
               prompt: prompt,
               processingTime: processingTime,
               generatedAt: new Date(),
               attemptNumber: i + 1,
+              imageRetrieved: !!imageData,
             },
           };
         } catch (error) {

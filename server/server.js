@@ -6,6 +6,7 @@ const connectDB = require("./config/database");
 const authRoutes = require("./routes/auth");
 const routeRoutes = require("./routes/routes");
 const weatherRoutes = require("./routes/weather");
+const imageRoutes = require("./routes/images");
 
 // Initialize Express app
 const app = express();
@@ -31,6 +32,7 @@ app.use(express.urlencoded({ extended: true })); // Parse URL-encoded bodies
 app.use("/api/auth", authRoutes);
 app.use("/api/routes", routeRoutes);
 app.use("/api/weather", weatherRoutes);
+app.use("/api/images", imageRoutes);
 
 // Basic test route
 app.get("/api/test", (req, res) => {
