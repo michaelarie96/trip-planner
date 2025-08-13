@@ -65,7 +65,7 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       console.log("Attempting login...");
-      setIsLoading(true);
+      // DON'T set global isLoading for login attempts - only for auth initialization
 
       const response = await authAPI.login({ email, password });
 
@@ -85,15 +85,14 @@ export const AuthProvider = ({ children }) => {
         "Login failed. Please try again.";
 
       return { success: false, message: errorMessage };
-    } finally {
-      setIsLoading(false);
     }
+    // DON'T modify global loading state for login attempts
   };
 
   const register = async (name, email, password) => {
     try {
       console.log("Attempting registration...");
-      setIsLoading(true);
+      // DON'T set global isLoading for registration attempts
 
       const response = await authAPI.register({ name, email, password });
 
@@ -121,9 +120,8 @@ export const AuthProvider = ({ children }) => {
       }
 
       return { success: false, message: errorMessage };
-    } finally {
-      setIsLoading(false);
     }
+    // DON'T modify global loading state for registration attempts
   };
 
   const logout = () => {
