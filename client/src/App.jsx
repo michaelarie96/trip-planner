@@ -13,40 +13,13 @@ import { Map, History } from "lucide-react";
 // Import pages
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
-// import PlanningPage from "./pages/PlanningPage";  // Will create next
+import PlanningPage from "./pages/PlanningPage";
 // import HistoryPage from "./pages/HistoryPage";    // Will create later
 
 // Import the Layout component
 import Layout from "./components/layout/Layout";
 
-// Temporary placeholder components for routes we haven't built yet
-const PlanningPage = () => (
-  <Layout>
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="text-center">
-        <h1 className="text-3xl font-semibold text-gray-900 mb-4">
-          Route Planning
-        </h1>
-        <p className="text-gray-600 mb-6">
-          Planning page coming soon! This is where you'll create your trip
-          routes.
-        </p>
-        <div className="bg-white rounded-xl shadow-soft border border-gray-200 p-8">
-          <p className="text-gray-500 mb-4">This page will include:</p>
-          <ul className="text-left text-gray-600 space-y-2 max-w-md mx-auto">
-            <li>• Country/city selection form</li>
-            <li>• Trip type selection (cycling/trekking)</li>
-            <li>• AI route generation</li>
-            <li>• Interactive map display</li>
-            <li>• Weather forecast integration</li>
-            <li>• Route saving functionality</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </Layout>
-);
-
+// Temporary placeholder component for HistoryPage
 const HistoryPage = () => (
   <Layout>
     <div className="max-w-6xl mx-auto px-6 py-8">
