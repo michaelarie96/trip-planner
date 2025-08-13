@@ -1,0 +1,154 @@
+/* Import Inter font from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Tailwind directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Leaflet CSS - required for maps */
+@import 'leaflet/dist/leaflet.css';
+
+/* Base layer - ensure Inter font is applied */
+@layer base {
+  * {
+    @apply border-gray-200;
+  }
+  
+  body {
+    @apply font-sans text-gray-900 antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  }
+  
+  /* Ensure proper font rendering */
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Component layer - reusable component styles */
+@layer components {
+  /* Button base styles */
+  .btn-base {
+    @apply px-6 py-3 rounded-lg font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+  
+  .btn-primary {
+    @apply btn-base bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500;
+  }
+  
+  .btn-cycling {
+    @apply btn-base bg-cycling-600 hover:bg-cycling-700 text-white focus:ring-cycling-500;
+  }
+  
+  .btn-trekking {
+    @apply btn-base bg-trekking-600 hover:bg-trekking-700 text-white focus:ring-trekking-500;
+  }
+  
+  .btn-secondary {
+    @apply btn-base bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 focus:ring-primary-500;
+  }
+  
+  /* Card styles */
+  .card-base {
+    @apply bg-white rounded-xl shadow-soft border border-gray-200;
+  }
+  
+  .card-hover {
+    @apply card-base hover:shadow-card-hover hover:border-primary-300 transition-all duration-200 cursor-pointer;
+  }
+  
+  /* Form input styles */
+  .input-base {
+    @apply w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-colors duration-200;
+  }
+  
+  /* Badge styles */
+  .badge-cycling {
+    @apply bg-cycling-100 text-cycling-700 px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .badge-trekking {
+    @apply bg-trekking-100 text-trekking-700 px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  .badge-neutral {
+    @apply bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium;
+  }
+  
+  /* Loading animation styles */
+  .loading-spinner {
+    @apply animate-spin h-5 w-5 border-2 border-primary-600 border-t-transparent rounded-full;
+  }
+  
+  /* Map container styles */
+  .map-container {
+    @apply w-full h-96 rounded-lg border border-gray-200 overflow-hidden;
+  }
+  
+  /* Weather card styles */
+  .weather-card {
+    @apply bg-primary-50 rounded-lg p-4 border border-primary-200;
+  }
+}
+
+/* Utility layer - custom utilities */
+@layer utilities {
+  /* Animation utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.5s ease-in-out;
+  }
+  
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out;
+  }
+  
+  /* Scrollbar styling */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(203 213 225) rgb(248 250 252);
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-track {
+    @apply bg-gray-100;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+}
+
+/* Fix leaflet marker icons (common issue with Webpack) */
+.leaflet-marker-icon {
+  margin-left: -12px !important;
+  margin-top: -41px !important;
+}
+
+/* Custom leaflet controls styling */
+.leaflet-control-container .leaflet-control-attribution {
+  @apply bg-white/90 text-xs text-gray-600;
+}
+
+.leaflet-control-zoom a {
+  @apply text-gray-700 hover:text-primary-600;
+}
+
+/* Route polyline styles will be handled programmatically */
+.cycling-route {
+  color: theme('colors.cycling.600');
+  stroke: theme('colors.cycling.600');
+}
+
+.trekking-route {
+  color: theme('colors.trekking.600');
+  stroke: theme('colors.trekking.600');
+}
