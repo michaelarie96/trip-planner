@@ -38,6 +38,101 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
     description: "",
   });
 
+  // Debug and validate route data
+  console.log("=== RouteDisplay Debug Info ===");
+  console.log("Received routeData:", routeData);
+  console.log("Received formData:", formData);
+
+  if (!routeData) {
+    console.log("❌ No routeData provided to RouteDisplay");
+    return (
+      <div className="bg-white rounded-xl shadow-soft border border-gray-200 p-6">
+        <div className="text-center py-8 text-gray-500">
+          <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+          <p>No route data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!formData) {
+    console.log("❌ No formData provided to RouteDisplay");
+    return (
+      <div className="bg-white rounded-xl shadow-soft border border-gray-200 p-6">
+        <div className="text-center py-8 text-gray-500">
+          <AlertCircle className="h-8 w-8 mx-auto mb-2" />
+          <p>No form data available</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Extract route data - check multiple possible structures
+  let route = null;
+  let imageData = null;
+  let generationData = null;
+
+  // Try different data structures from API response
+  if (routeData.routeData && routeData.routeData.routeData) {
+    // Structure: { routeData: { routeData: {...} }, imageData: {...}, generationData: {...} }
+    route = routeData.routeData.routeData;
+    imageData = routeData.imageData;
+    generationData = routeData.generationData;
+    console.log("✅ Using nested routeData.routeData.routeData structure");
+  } else if (routeData.routeData) {
+    // Structure: { routeData: {...}, imageData: {...}, generationData: {...} }
+    route = routeData.routeData;
+    imageData = routeData.imageData;
+    generationData = routeData.generationData;
+    console.log("✅ Using routeData.routeData structure");
+  } else if (routeData.route) {
+    // Structure: { route: {...} }
+    route = routeData.route;
+    console.log("✅ Using routeData.route structure");
+  } else {
+    // Structure: direct route data
+    route = routeData;
+    console.log("✅ Using direct routeData structure");
+  }
+
+  console.log("Extracted route:", route);
+  console.log("Route keys:", route ? Object.keys(route) : "No route");
+  console.log("Daily routes:", route?.dailyRoutes);
+  console.log("Total distance:", route?.totalDistance);
+
+  if (!route) {
+    console.log("❌ Could not extract route data from any known structure");
+    return (
+      <div className="bg-white rounded-xl shadow-soft border border-gray-200 p-6">
+        <div className="text-center py-8">
+          <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">
+            Data Structure Issue
+          </h3>
+          <p className="text-gray-600 mb-4">
+            Unable to extract route data from the response
+          </p>
+          <details className="text-left bg-gray-50 p-4 rounded-lg">
+            <summary className="cursor-pointer text-sm font-medium text-gray-700 mb-2">
+              Show Debug Information
+            </summary>
+            <div className="text-xs text-gray-600 space-y-2">
+              <div>
+                <strong>RouteData keys:</strong> {Object.keys(routeData).join(', ')}
+              </div>
+              <div>
+                <strong>RouteData structure:</strong>
+                <pre className="mt-1 p-2 bg-gray-100 rounded overflow-auto max-h-32">
+                  {JSON.stringify(routeData, null, 2)}
+                </pre>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+    );
+  }
+
   // Get trip type styling
   const getTripTypeStyles = () => {
     if (formData.tripType === "cycling") {
@@ -106,9 +201,9 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
         country: formData.country,
         city: formData.city || null,
         tripType: formData.tripType,
-        routeData: routeData.routeData,
-        imageUrl: routeData.imageData?.imageUrl || null,
-        generationData: routeData.generationData || null,
+        routeData: route,
+        imageUrl: imageData?.imageUrl || null,
+        generationData: generationData || null,
       };
 
       const response = await routesAPI.save(saveData);
@@ -150,15 +245,16 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
     setSaveError("");
   };
 
-  if (!routeData) {
-    // Debug: Log what we actually received
-    console.log("RouteDisplay received routeData:", routeData);
-    return null;
-  }
+  // Safely get route statistics with fallbacks
+  const getRouteStats = () => {
+    const totalDistance = route.totalDistance || 0;
+    const estimatedDuration = route.estimatedDuration || (formData.tripType === 'cycling' ? '2 days' : '1 day');
+    const dayCount = route.dailyRoutes?.length || (formData.tripType === 'cycling' ? 2 : 1);
+    
+    return { totalDistance, estimatedDuration, dayCount };
+  };
 
-  // The route data structure is directly in routeData, not nested
-  const route = routeData.routeData || routeData;
-  console.log("RouteDisplay processing route:", route);
+  const { totalDistance, estimatedDuration, dayCount } = getRouteStats();
 
   return (
     <div className="space-y-6">
@@ -193,7 +289,7 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                   <Route className="h-4 w-4 text-gray-600" />
                 </div>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {route.totalDistance || 0}km
+                  {totalDistance}km
                 </p>
                 <p className="text-sm text-gray-600">Total Distance</p>
               </div>
@@ -203,7 +299,7 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                   <Clock className="h-4 w-4 text-gray-600" />
                 </div>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {route.estimatedDuration || "1-2 days"}
+                  {estimatedDuration}
                 </p>
                 <p className="text-sm text-gray-600">Duration</p>
               </div>
@@ -213,10 +309,10 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                   <Calendar className="h-4 w-4 text-gray-600" />
                 </div>
                 <p className="text-2xl font-semibold text-gray-900">
-                  {route.dailyRoutes?.length || 1}
+                  {dayCount}
                 </p>
                 <p className="text-sm text-gray-600">
-                  {route.dailyRoutes?.length === 1 ? "Day" : "Days"}
+                  {dayCount === 1 ? "Day" : "Days"}
                 </p>
               </div>
             </div>
@@ -224,11 +320,11 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
 
           {/* Country Image */}
           <div className="lg:col-span-1">
-            {routeData.imageData?.imageUrl ? (
+            {imageData?.imageUrl ? (
               <div className="relative">
                 <img
-                  src={routeData.imageData.imageUrl}
-                  alt={routeData.imageData.description || `${formData.country} landscape`}
+                  src={imageData.imageUrl}
+                  alt={imageData.description || `${formData.country} landscape`}
                   className="w-full h-48 object-cover rounded-lg"
                   onError={(e) => {
                     e.target.style.display = 'none';
@@ -241,9 +337,9 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                     <p className="text-sm">Image unavailable</p>
                   </div>
                 </div>
-                {routeData.imageData.photographer && (
+                {imageData.photographer && (
                   <div className="absolute bottom-2 right-2 bg-black bg-opacity-60 text-white text-xs px-2 py-1 rounded">
-                    Photo by {routeData.imageData.photographer.name}
+                    Photo by {imageData.photographer.name}
                   </div>
                 )}
               </div>
@@ -268,6 +364,7 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
 
         <div className="space-y-4">
           {route.dailyRoutes && route.dailyRoutes.length > 0 ? (
+            // Display actual daily routes
             route.dailyRoutes.map((day, index) => (
               <div
                 key={day.day || index}
@@ -312,18 +409,36 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
               </div>
             ))
           ) : (
-            /* Fallback for missing daily routes data */
-            <div className="text-center py-8 text-gray-500">
-              <p className="mb-2">Route details are being processed...</p>
-              <p className="text-sm">
-                The route was generated successfully, but detailed breakdown information is not available.
-              </p>
-              {/* Debug information */}
-              <details className="mt-4 text-left">
-                <summary className="cursor-pointer text-sm text-gray-400 hover:text-gray-600">
-                  Debug: Show route data structure
+            // Fallback display with debug information
+            <div className="text-center py-8">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
+                <h4 className="font-medium text-yellow-800 mb-2">⚠️ Missing Daily Route Data</h4>
+                <div className="text-left text-sm text-yellow-700 space-y-1">
+                  <p><strong>Expected:</strong> route.dailyRoutes array with day objects</p>
+                  <p><strong>Found:</strong> {route.dailyRoutes ? `${route.dailyRoutes.length} items` : 'undefined or empty'}</p>
+                  <p><strong>Route Keys:</strong> {Object.keys(route).join(', ')}</p>
+                </div>
+              </div>
+              
+              {/* Try to show some route info if available */}
+              {route.coordinates && route.coordinates.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <h4 className="font-medium text-blue-800 mb-2">Available Route Data</h4>
+                  <div className="text-sm text-blue-700 space-y-1">
+                    <p>📍 {route.coordinates.length} coordinate points</p>
+                    {route.waypoints && <p>🗺️ {route.waypoints.length} waypoints</p>}
+                    <p>📏 Total distance: {totalDistance}km</p>
+                    <p>⏱️ Duration: {estimatedDuration}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Raw data display for debugging */}
+              <details className="text-left">
+                <summary className="cursor-pointer text-sm text-gray-400 hover:text-gray-600 mb-2">
+                  🔍 Show Raw Route Data (for debugging)
                 </summary>
-                <pre className="mt-2 p-3 bg-gray-100 rounded text-xs overflow-auto">
+                <pre className="p-3 bg-gray-100 rounded text-xs overflow-auto max-h-40 text-left">
                   {JSON.stringify(route, null, 2)}
                 </pre>
               </details>

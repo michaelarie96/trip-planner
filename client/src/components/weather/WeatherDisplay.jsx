@@ -40,20 +40,50 @@ const getWeatherIcon = (condition) => {
  */
 const getWeatherStyling = (condition) => {
   const styleMap = {
-    Clear: { bg: "bg-yellow-50", border: "border-yellow-200", text: "text-yellow-700" },
-    Clouds: { bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-700" },
-    Rain: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
-    Drizzle: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
-    Snow: { bg: "bg-blue-50", border: "border-blue-200", text: "text-blue-700" },
-    Thunderstorm: { bg: "bg-purple-50", border: "border-purple-200", text: "text-purple-700" },
+    Clear: {
+      bg: "bg-yellow-50",
+      border: "border-yellow-200",
+      text: "text-yellow-700",
+    },
+    Clouds: {
+      bg: "bg-gray-50",
+      border: "border-gray-200",
+      text: "text-gray-700",
+    },
+    Rain: {
+      bg: "bg-blue-50",
+      border: "border-blue-200",
+      text: "text-blue-700",
+    },
+    Drizzle: {
+      bg: "bg-blue-50",
+      border: "border-blue-200",
+      text: "text-blue-700",
+    },
+    Snow: {
+      bg: "bg-blue-50",
+      border: "border-blue-200",
+      text: "text-blue-700",
+    },
+    Thunderstorm: {
+      bg: "bg-purple-50",
+      border: "border-purple-200",
+      text: "text-purple-700",
+    },
   };
 
-  return styleMap[condition] || { bg: "bg-gray-50", border: "border-gray-200", text: "text-gray-700" };
+  return (
+    styleMap[condition] || {
+      bg: "bg-gray-50",
+      border: "border-gray-200",
+      text: "text-gray-700",
+    }
+  );
 };
 
 /**
  * WeatherDisplay Component
- * 
+ *
  * Displays 3-day weather forecast for route location:
  * - Fetches weather data from backend API
  * - Shows daily forecasts with icons and details
@@ -99,18 +129,20 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
       }
     } catch (error) {
       console.error("Weather fetch error:", error);
-      
+
       let errorMessage;
       if (error.response?.status === 404) {
         errorMessage = "Weather data not available for this location";
       } else if (error.response?.status === 429) {
-        errorMessage = "Weather service rate limit exceeded. Please try again later.";
+        errorMessage =
+          "Weather service rate limit exceeded. Please try again later.";
       } else if (error.response?.status === 503) {
         errorMessage = "Weather service temporarily unavailable";
       } else {
-        errorMessage = error.response?.data?.message || "Failed to load weather data";
+        errorMessage =
+          error.response?.data?.message || "Failed to load weather data";
       }
-      
+
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -132,7 +164,9 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
   // Loading state
   if (isLoading) {
     return (
-      <div className={`bg-white rounded-xl shadow-soft border border-gray-200 p-6 ${className}`}>
+      <div
+        className={`bg-white rounded-xl shadow-soft border border-gray-200 p-6 ${className}`}
+      >
         <div className="flex items-center justify-center py-8">
           <div className="flex items-center space-x-3">
             <Loader2 className="h-6 w-6 animate-spin text-primary-600" />
@@ -146,7 +180,9 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
   // Error state
   if (error) {
     return (
-      <div className={`bg-white rounded-xl shadow-soft border border-gray-200 p-6 ${className}`}>
+      <div
+        className={`bg-white rounded-xl shadow-soft border border-gray-200 p-6 ${className}`}
+      >
         <div className="text-center py-6">
           <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-3" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -168,7 +204,9 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
   // No data state
   if (!weatherData) {
     return (
-      <div className={`bg-white rounded-xl shadow-soft border border-gray-200 p-6 ${className}`}>
+      <div
+        className={`bg-white rounded-xl shadow-soft border border-gray-200 p-6 ${className}`}
+      >
         <div className="text-center py-6 text-gray-500">
           <Cloud className="h-8 w-8 mx-auto mb-2" />
           <p>No weather data available</p>
@@ -178,7 +216,9 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
   }
 
   return (
-    <div className={`bg-white rounded-xl shadow-soft border border-gray-200 overflow-hidden ${className}`}>
+    <div
+      className={`bg-white rounded-xl shadow-soft border border-gray-200 overflow-hidden ${className}`}
+    >
       {/* Weather Header */}
       <div className="p-6 border-b border-gray-200">
         <div className="flex items-center justify-between">
@@ -192,16 +232,21 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
                 <MapPin className="h-4 w-4" />
                 <span>
                   {weatherData.location.name}
-                  {weatherData.location.country && `, ${weatherData.location.country}`}
+                  {weatherData.location.country &&
+                    `, ${weatherData.location.country}`}
                 </span>
               </div>
             )}
           </div>
-          
+
           <div className="flex items-center space-x-2">
             {lastUpdated && (
               <span className="text-xs text-gray-500">
-                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                Updated{" "}
+                {lastUpdated.toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
               </span>
             )}
             <button
@@ -210,7 +255,11 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
               title="Refresh weather"
               disabled={isLoading}
             >
-              <RefreshCw className={`h-4 w-4 text-gray-600 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`h-4 w-4 text-gray-600 ${
+                  isLoading ? "animate-spin" : ""
+                }`}
+              />
             </button>
           </div>
         </div>
@@ -222,26 +271,34 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
           {weatherData.forecast.map((day, index) => {
             const WeatherIcon = getWeatherIcon(day.weather.condition);
             const styling = getWeatherStyling(day.weather.condition);
-            
+
             return (
               <div key={day.date || index} className="p-4 md:p-6">
                 {/* Day Header */}
                 <div className="text-center mb-3">
                   <h4 className="font-medium text-gray-900">
-                    {index === 0 ? "Tomorrow" : day.dayName || `Day ${index + 1}`}
+                    {index === 0
+                      ? "Tomorrow"
+                      : day.dayName || `Day ${index + 1}`}
                   </h4>
                   <p className="text-sm text-gray-500">
-                    {day.date ? new Date(day.date).toLocaleDateString([], { 
-                      month: 'short', 
-                      day: 'numeric' 
-                    }) : ''}
+                    {day.date
+                      ? new Date(day.date).toLocaleDateString([], {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : ""}
                   </p>
                 </div>
 
                 {/* Weather Icon and Condition */}
                 <div className="text-center mb-3">
-                  <div className={`inline-flex items-center justify-center w-12 h-12 md:w-16 md:h-16 rounded-full ${styling.bg} ${styling.border} border-2 mb-2`}>
-                    <WeatherIcon className={`h-6 w-6 md:h-8 md:w-8 ${styling.text}`} />
+                  <div
+                    className={`inline-flex items-center justify-center w-12 h-12 md:w-16 md:h-16 rounded-full ${styling.bg} ${styling.border} border-2 mb-2`}
+                  >
+                    <WeatherIcon
+                      className={`h-6 w-6 md:h-8 md:w-8 ${styling.text}`}
+                    />
                   </div>
                   <p className="text-sm font-medium text-gray-900">
                     {day.weather.description}
@@ -253,12 +310,16 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
                   <div className="flex items-center justify-center space-x-1 mb-1">
                     <Thermometer className="h-4 w-4 text-gray-600" />
                     <span className="text-xl md:text-2xl font-semibold text-gray-900">
-                      {day.weather.temperature.current || day.weather.temperature.max}°C
+                      {day.weather.temperature.current ||
+                        day.weather.temperature.max}
+                      °C
                     </span>
                   </div>
-                  {day.weather.temperature.min !== day.weather.temperature.max && (
+                  {day.weather.temperature.min !==
+                    day.weather.temperature.max && (
                     <p className="text-sm text-gray-600">
-                      {day.weather.temperature.min}° - {day.weather.temperature.max}°
+                      {day.weather.temperature.min}° -{" "}
+                      {day.weather.temperature.max}°
                     </p>
                   )}
                   {day.weather.temperature.feelsLike && (
@@ -278,7 +339,8 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
                         <span>Wind</span>
                       </div>
                       <span className="text-gray-900 font-medium text-right">
-                        {day.weather.windSpeed}<span className="text-xs"> km/h</span>
+                        {day.weather.windSpeed}
+                        <span className="text-xs"> km/h</span>
                       </span>
                     </div>
                   )}
@@ -291,7 +353,8 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
                         <span>Humidity</span>
                       </div>
                       <span className="text-gray-900 font-medium text-right">
-                        {day.weather.humidity}<span className="text-xs">%</span>
+                        {day.weather.humidity}
+                        <span className="text-xs">%</span>
                       </span>
                     </div>
                   )}
@@ -304,7 +367,8 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
                         <span>Clouds</span>
                       </div>
                       <span className="text-gray-900 font-medium text-right">
-                        {day.weather.cloudiness}<span className="text-xs">%</span>
+                        {day.weather.cloudiness}
+                        <span className="text-xs">%</span>
                       </span>
                     </div>
                   )}
@@ -317,7 +381,8 @@ const WeatherDisplay = ({ location, routeId = null, className = "" }) => {
                         <span>Rain</span>
                       </div>
                       <span className="text-gray-900 font-medium text-right">
-                        {day.weather.precipitation}<span className="text-xs">mm</span>
+                        {day.weather.precipitation}
+                        <span className="text-xs">mm</span>
                       </span>
                     </div>
                   )}

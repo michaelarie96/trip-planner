@@ -1,10 +1,17 @@
 import { useState } from "react";
-import { MapPin, Bike, Mountain, Loader2, AlertCircle, Sparkles } from "lucide-react";
+import {
+  MapPin,
+  Bike,
+  Mountain,
+  Loader2,
+  AlertCircle,
+  Sparkles,
+} from "lucide-react";
 import { routesAPI } from "../../services/api";
 
 /**
  * RouteForm Component
- * 
+ *
  * Handles user input for route generation:
  * - Country/city selection
  * - Trip type selection (cycling/trekking)
@@ -122,7 +129,7 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
 
       if (response.data && response.data.route) {
         console.log("Route generated successfully:", response.data.route);
-        
+
         // Pass the generated route data to parent component
         onRouteGenerated({
           routeData: response.data.route,
@@ -142,9 +149,12 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
       // Handle different types of errors
       let errorMessage;
       if (error.response?.status === 503) {
-        errorMessage = "Route generation service is temporarily unavailable. Please try again in a few moments.";
+        errorMessage =
+          "Route generation service is temporarily unavailable. Please try again in a few moments.";
       } else if (error.response?.status === 400) {
-        errorMessage = error.response.data?.message || "Invalid request. Please check your inputs.";
+        errorMessage =
+          error.response.data?.message ||
+          "Invalid request. Please check your inputs.";
       } else if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
       } else if (error.message) {
@@ -180,7 +190,8 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
           <span>Generate Your Route</span>
         </h2>
         <p className="text-gray-600 text-sm">
-          Choose your destination and trip type, and let AI create the perfect route for you.
+          Choose your destination and trip type, and let AI create the perfect
+          route for you.
         </p>
       </div>
 
@@ -189,7 +200,9 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
         <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-start space-x-3">
           <AlertCircle className="h-5 w-5 text-red-500 mt-0.5 flex-shrink-0" />
           <div>
-            <p className="text-red-800 text-sm font-medium">Generation Failed</p>
+            <p className="text-red-800 text-sm font-medium">
+              Generation Failed
+            </p>
             <p className="text-red-700 text-sm mt-1">{serverError}</p>
           </div>
         </div>
@@ -274,7 +287,11 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
                 formData.tripType === "cycling"
                   ? "border-cycling-600 bg-cycling-50 ring-2 ring-cycling-600 ring-opacity-20"
                   : "border-gray-200 bg-white hover:border-cycling-300 hover:bg-cycling-50"
-              } ${isGenerating ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+              } ${
+                isGenerating
+                  ? "opacity-60 cursor-not-allowed"
+                  : "cursor-pointer"
+              }`}
             >
               <div className="flex items-start space-x-3">
                 <div
@@ -309,7 +326,11 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
                 formData.tripType === "trekking"
                   ? "border-trekking-600 bg-trekking-50 ring-2 ring-trekking-600 ring-opacity-20"
                   : "border-gray-200 bg-white hover:border-trekking-300 hover:bg-trekking-50"
-              } ${isGenerating ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+              } ${
+                isGenerating
+                  ? "opacity-60 cursor-not-allowed"
+                  : "cursor-pointer"
+              }`}
             >
               <div className="flex items-start space-x-3">
                 <div
@@ -352,18 +373,12 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
                 : formData.tripType === "trekking"
                 ? "btn-trekking"
                 : "btn-primary"
-            } ${
-              isGenerating
-                ? "opacity-60 cursor-not-allowed"
-                : ""
-            }`}
+            } ${isGenerating ? "opacity-60 cursor-not-allowed" : ""}`}
           >
             {isGenerating && <Loader2 className="h-4 w-4 animate-spin" />}
             <Sparkles className="h-4 w-4" />
             <span>
-              {isGenerating
-                ? "Generating Route..."
-                : "Generate AI Route"}
+              {isGenerating ? "Generating Route..." : "Generate AI Route"}
             </span>
           </button>
 
@@ -380,12 +395,19 @@ const RouteForm = ({ onRouteGenerated, isGenerating, setIsGenerating }) => {
 
       {/* Help Text */}
       <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-        <h4 className="text-sm font-medium text-gray-900 mb-2">Tips for better routes:</h4>
+        <h4 className="text-sm font-medium text-gray-900 mb-2">
+          Tips for better routes:
+        </h4>
         <ul className="text-sm text-gray-600 space-y-1">
-          <li>• Be specific with country names (e.g., "France" rather than "Europe")</li>
+          <li>
+            • Be specific with country names (e.g., "France" rather than
+            "Europe")
+          </li>
           <li>• Add a city for more targeted recommendations</li>
           <li>• Cycling routes connect different cities over 2 days</li>
-          <li>• Trekking routes are circular, returning to the starting point</li>
+          <li>
+            • Trekking routes are circular, returning to the starting point
+          </li>
         </ul>
       </div>
     </div>

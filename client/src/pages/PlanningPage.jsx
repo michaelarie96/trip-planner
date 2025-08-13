@@ -4,24 +4,24 @@ import RouteForm from "../components/route/RouteForm";
 import RouteDisplay from "../components/route/RouteDisplay";
 import MapDisplay from "../components/route/MapDisplay";
 import WeatherDisplay from "../components/weather/WeatherDisplay";
-import { 
-  Map, 
-  Sparkles, 
-  ArrowLeft, 
+import {
+  Map,
+  Sparkles,
+  ArrowLeft,
   CheckCircle,
   Lightbulb,
-  Cloud
+  Cloud,
 } from "lucide-react";
 
 /**
  * PlanningPage Component
- * 
+ *
  * Main route planning interface that orchestrates:
  * - RouteForm: User input and AI route generation
  * - RouteDisplay: Generated route details and save functionality
  * - MapDisplay: Interactive map visualization
  * - WeatherDisplay: 3-day weather forecast
- * 
+ *
  * Manages state flow between all components and handles
  * the complete route planning workflow.
  */
@@ -30,10 +30,10 @@ const PlanningPage = () => {
   const [generatedRoute, setGeneratedRoute] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [formData, setFormData] = useState(null);
-  
+
   // Success state for saved routes
   const [lastSavedRoute, setLastSavedRoute] = useState(null);
-  
+
   // UI state for better UX
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
@@ -42,11 +42,11 @@ const PlanningPage = () => {
    */
   const handleRouteGenerated = (routeData) => {
     console.log("Route generated in PlanningPage:", routeData);
-    
+
     // Set the generated route data
     setGeneratedRoute(routeData);
     setFormData(routeData.formData);
-    
+
     // Clear any previous success messages
     setShowSuccessMessage(false);
     setLastSavedRoute(null);
@@ -57,11 +57,11 @@ const PlanningPage = () => {
    */
   const handleRouteSaved = (savedRoute) => {
     console.log("Route saved successfully:", savedRoute);
-    
+
     // Store saved route info and show success message
     setLastSavedRoute(savedRoute);
     setShowSuccessMessage(true);
-    
+
     // Auto-hide success message after 5 seconds
     setTimeout(() => {
       setShowSuccessMessage(false);
@@ -83,7 +83,7 @@ const PlanningPage = () => {
    */
   const getWeatherLocation = () => {
     if (!formData) return null;
-    
+
     // Use city if available, otherwise just country
     if (formData.city && formData.city.trim()) {
       return `${formData.city}, ${formData.country}`;
@@ -105,11 +105,12 @@ const PlanningPage = () => {
                 <span>Plan Your Route</span>
               </h1>
               <p className="text-gray-600 max-w-2xl">
-                Generate personalized cycling and trekking routes using AI. Get detailed 
-                route information, interactive maps, and weather forecasts for your adventure.
+                Generate personalized cycling and trekking routes using AI. Get
+                detailed route information, interactive maps, and weather
+                forecasts for your adventure.
               </p>
             </div>
-            
+
             {/* Generate New Route Button (only show when route is generated) */}
             {generatedRoute && (
               <button
@@ -167,22 +168,37 @@ const PlanningPage = () => {
                       <div className="flex items-start space-x-2">
                         <Sparkles className="h-4 w-4 text-primary-600 mt-0.5 flex-shrink-0" />
                         <div>
-                          <p className="font-medium mb-1">1. Choose Destination</p>
-                          <p className="text-primary-700">Select your country and optionally specify a city for more targeted routes.</p>
+                          <p className="font-medium mb-1">
+                            1. Choose Destination
+                          </p>
+                          <p className="text-primary-700">
+                            Select your country and optionally specify a city
+                            for more targeted routes.
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-start space-x-2">
                         <Map className="h-4 w-4 text-primary-600 mt-0.5 flex-shrink-0" />
                         <div>
-                          <p className="font-medium mb-1">2. Pick Adventure Type</p>
-                          <p className="text-primary-700">Choose cycling (2-day, city-to-city) or trekking (circular, 5-15km).</p>
+                          <p className="font-medium mb-1">
+                            2. Pick Adventure Type
+                          </p>
+                          <p className="text-primary-700">
+                            Choose cycling (2-day, city-to-city) or trekking
+                            (circular, 5-15km).
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-start space-x-2">
                         <Cloud className="h-4 w-4 text-primary-600 mt-0.5 flex-shrink-0" />
                         <div>
-                          <p className="font-medium mb-1">3. Get Complete Plan</p>
-                          <p className="text-primary-700">Receive AI-generated routes with maps, weather, and save options.</p>
+                          <p className="font-medium mb-1">
+                            3. Get Complete Plan
+                          </p>
+                          <p className="text-primary-700">
+                            Receive AI-generated routes with maps, weather, and
+                            save options.
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -204,17 +220,12 @@ const PlanningPage = () => {
               <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
                 {/* Map Display - Takes 2 columns on large screens */}
                 <div className="xl:col-span-2">
-                  <MapDisplay
-                    routeData={generatedRoute}
-                    formData={formData}
-                  />
+                  <MapDisplay routeData={generatedRoute} formData={formData} />
                 </div>
 
                 {/* Weather Display - Takes 1 column on large screens */}
                 <div className="xl:col-span-1">
-                  <WeatherDisplay
-                    location={getWeatherLocation()}
-                  />
+                  <WeatherDisplay location={getWeatherLocation()} />
                 </div>
               </div>
 
@@ -225,8 +236,8 @@ const PlanningPage = () => {
                     Ready for Your Adventure?
                   </h3>
                   <p className="text-gray-600 mb-4">
-                    Your route is planned, weather is forecasted, and the map is ready. 
-                    Don't forget to save your route for future reference!
+                    Your route is planned, weather is forecasted, and the map is
+                    ready. Don't forget to save your route for future reference!
                   </p>
                   <div className="flex flex-wrap justify-center items-center gap-4 text-sm text-gray-600">
                     <div className="flex items-center space-x-1">

@@ -78,9 +78,35 @@ const createCustomIcon = (type, color) => {
 const MapDisplay = ({ routeData, formData, className = "" }) => {
   const mapRef = useRef(null);
 
+  // Debug logging for map
+  console.log("=== MapDisplay Debug Info ===");
+  console.log("MapDisplay received routeData:", routeData);
+  console.log("MapDisplay received formData:", formData);
+
+  // Extract route data using same logic as RouteDisplay
+  let route = null;
+  
+  if (routeData?.routeData?.routeData) {
+    route = routeData.routeData.routeData;
+    console.log("✅ MapDisplay using nested routeData.routeData.routeData structure");
+  } else if (routeData?.routeData) {
+    route = routeData.routeData;
+    console.log("✅ MapDisplay using routeData.routeData structure");
+  } else if (routeData?.route) {
+    route = routeData.route;
+    console.log("✅ MapDisplay using routeData.route structure");
+  } else {
+    route = routeData;
+    console.log("✅ MapDisplay using direct routeData structure");
+  }
+
+  console.log("MapDisplay extracted route:", route);
+  console.log("Route coordinates:", route?.coordinates);
+  console.log("Route dailyRoutes:", route?.dailyRoutes);
+
   // Get route styling based on trip type
   const getRouteStyles = () => {
-    if (formData.tripType === "cycling") {
+    if (formData?.tripType === "cycling") {
       return {
         color: "#ea580c", // cycling orange
         weight: 4,
@@ -104,19 +130,25 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
   const defaultZoom = 8;
 
   // If no route data, show empty state
-  if (!routeData || !routeData.routeData || !routeData.routeData.coordinates) {
+  if (!routeData || !route || !route.coordinates || route.coordinates.length === 0) {
+    console.log("❌ MapDisplay: No valid route data or coordinates");
     return (
       <div className={`map-container bg-gray-100 flex items-center justify-center ${className}`}>
         <div className="text-center text-gray-500">
           <MapPin className="h-8 w-8 mx-auto mb-2" />
           <p className="text-sm">Map will appear here after route generation</p>
+          {route && (
+            <p className="text-xs mt-1 text-gray-400">
+              Route found but no coordinates available
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
-  const route = routeData.routeData;
   const coordinates = route.coordinates;
+  console.log("MapDisplay using coordinates:", coordinates.length, "points");
 
   // Generate markers for start, end, and waypoints
   const generateMarkers = () => {
@@ -125,9 +157,19 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
     // Process daily routes for markers
     if (route.dailyRoutes && route.dailyRoutes.length > 0) {
       route.dailyRoutes.forEach((day, dayIndex) => {
+        // For daily routes, use the main coordinates since day.coordinates might be empty
+        // Calculate approximate positions based on day and total route
+        const totalPoints = coordinates.length;
+        const pointsPerDay = Math.floor(totalPoints / route.dailyRoutes.length);
+        
+        const startIndex = dayIndex * pointsPerDay;
+        const endIndex = dayIndex === route.dailyRoutes.length - 1 ? totalPoints - 1 : (dayIndex + 1) * pointsPerDay - 1;
+        
+        const startCoord = coordinates[startIndex];
+        const endCoord = coordinates[endIndex];
+        
         // Start marker for each day
-        if (day.coordinates && day.coordinates.length > 0) {
-          const startCoord = day.coordinates[0];
+        if (startCoord) {
           markers.push({
             id: `start-day-${day.day}`,
             position: startCoord,
@@ -136,9 +178,10 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
             description: day.startPoint,
             day: day.day,
           });
+        }
 
-          // End marker for each day
-          const endCoord = day.coordinates[day.coordinates.length - 1];
+        // End marker for each day
+        if (endCoord) {
           markers.push({
             id: `end-day-${day.day}`,
             position: endCoord,
@@ -172,6 +215,7 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
       }
     }
 
+    console.log("Generated markers:", markers.length);
     return markers;
   };
 
@@ -182,11 +226,20 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
     const polylines = [];
 
     if (route.dailyRoutes && route.dailyRoutes.length > 0) {
-      route.dailyRoutes.forEach((day) => {
-        if (day.coordinates && day.coordinates.length > 1) {
+      // Split main coordinates between daily routes
+      const totalPoints = coordinates.length;
+      const pointsPerDay = Math.floor(totalPoints / route.dailyRoutes.length);
+      
+      route.dailyRoutes.forEach((day, dayIndex) => {
+        const startIndex = dayIndex * pointsPerDay;
+        const endIndex = dayIndex === route.dailyRoutes.length - 1 ? totalPoints : (dayIndex + 1) * pointsPerDay;
+        
+        const dayCoordinates = coordinates.slice(startIndex, endIndex + 1);
+        
+        if (dayCoordinates.length > 1) {
           polylines.push({
             id: `day-${day.day}`,
-            coordinates: day.coordinates,
+            coordinates: dayCoordinates,
             color: routeStyles.color,
             weight: routeStyles.weight,
             opacity: routeStyles.opacity,
@@ -207,6 +260,7 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
       }
     }
 
+    console.log("Generated polylines:", polylines.length);
     return polylines;
   };
 
@@ -227,11 +281,11 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
                 className="w-4 h-1 rounded"
                 style={{ backgroundColor: routeStyles.color }}
               />
-              <span>{formData.tripType} route</span>
+              <span>{formData?.tripType || 'route'}</span>
             </div>
             <div className="flex items-center space-x-1">
               <span>📍</span>
-              <span>waypoints</span>
+              <span>{markers.length} markers</span>
             </div>
           </div>
         </div>
@@ -272,7 +326,7 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
                     {polyline.day ? `Day ${polyline.day} Route` : 'Route'}
                   </h4>
                   <p className="text-sm text-gray-600">
-                    {formData.tripType.charAt(0).toUpperCase() + formData.tripType.slice(1)} route
+                    {formData?.tripType?.charAt(0).toUpperCase() + formData?.tripType?.slice(1) || 'Route'}
                   </p>
                 </div>
               </Popup>
@@ -321,15 +375,15 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
       <div className="p-4 bg-gray-50 border-t border-gray-200">
         <div className="flex flex-wrap items-center justify-between text-sm text-gray-600">
           <div className="flex items-center space-x-4">
-            <span>📏 {route.totalDistance}km total</span>
-            <span>📅 {route.estimatedDuration}</span>
+            <span>📏 {route.totalDistance || 0}km total</span>
+            <span>📅 {route.estimatedDuration || 'N/A'}</span>
             {route.difficulty && (
               <span>⭐ {route.difficulty} difficulty</span>
             )}
           </div>
           <div className="flex items-center space-x-2 mt-2 sm:mt-0">
             <Flag className="h-4 w-4" />
-            <span>{markers.length} waypoints</span>
+            <span>{polylines.length} route segments</span>
           </div>
         </div>
       </div>
