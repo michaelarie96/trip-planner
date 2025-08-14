@@ -1,5 +1,6 @@
 const { InferenceClient } = require("@huggingface/inference");
 const imageService = require("./imageService");
+const geocodingService = require("./geocodingService");
 
 class LLMService {
   constructor() {
@@ -43,7 +44,7 @@ class LLMService {
 
         try {
           const result = await this.callLLMWithRetry(prompt, model);
-          const processedRoute = this.processLLMResponse(
+          const processedRoute = await this.processLLMResponse(
             result,
             tripType,
             country,
@@ -265,7 +266,7 @@ Return ONLY a JSON object in this exact format:
    * @param {string} city - City name
    * @returns {Object} Processed route data
    */
-  processLLMResponse(llmResponse, tripType, country, city) {
+  async processLLMResponse(llmResponse, tripType, country, city) {
     try {
       // Extract JSON from the response
       const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
@@ -285,8 +286,13 @@ Return ONLY a JSON object in this exact format:
       // Validate required fields based on trip type
       this.validateRouteData(route, tripType);
 
-      // Generate coordinates (mock coordinates for now - will be enhanced later)
-      const coordinates = this.generateMockCoordinates(country, city, route);
+      // Generate realistic coordinates using geocoding service
+      const coordinates = await this.generateRealisticCoordinates(
+        country,
+        city,
+        route,
+        tripType
+      );
 
       // Transform to our internal format
       const processedRoute = {
@@ -312,6 +318,176 @@ Return ONLY a JSON object in this exact format:
       console.error("Raw LLM response:", llmResponse);
       throw new Error(`Failed to process LLM response: ${error.message}`);
     }
+  }
+
+  /**
+   * Generate realistic coordinates using geocoding service
+   * @param {string} country - Country name
+   * @param {string} city - City name (optional)
+   * @param {Object} route - Route data from LLM
+   * @param {string} tripType - 'cycling' or 'trekking'
+   * @returns {Array} Array of [lat, lng] coordinates
+   */
+  async generateRealisticCoordinates(country, city, route, tripType) {
+    try {
+      console.log("Generating realistic coordinates for route...");
+
+      // Extract waypoints from the route data
+      const waypoints = this.extractWaypointsFromRoute(route, country, city);
+
+      if (waypoints.length === 0) {
+        console.warn("No waypoints found, falling back to mock coordinates");
+        return this.generateMockCoordinates(country, city, route);
+      }
+
+      console.log("Extracted waypoints:", waypoints);
+
+      // Use geocoding service to generate realistic route coordinates
+      const coordinates = await geocodingService.generateRouteCoordinates(
+        waypoints,
+        tripType
+      );
+
+      console.log(`Generated ${coordinates.length} realistic coordinates`);
+      return coordinates;
+    } catch (error) {
+      console.error(
+        "Geocoding failed, falling back to mock coordinates:",
+        error.message
+      );
+
+      // Fallback to mock coordinates if geocoding fails
+      return this.generateMockCoordinates(country, city, route);
+    }
+  }
+
+  /**
+   * Extract waypoints from LLM route data in correct order
+   * @param {Object} route - Route data from LLM
+   * @param {string} country - Country name
+   * @param {string} city - City name (optional)
+   * @returns {Array} Array of location strings for geocoding
+   */
+  extractWaypointsFromRoute(route, country, city) {
+    const waypoints = [];
+
+    try {
+      if (route.day1) {
+        // Add starting point
+        if (route.day1.start) {
+          waypoints.push(
+            this.formatLocationForGeocoding(route.day1.start, country)
+          );
+        }
+
+        // Add day 1 waypoints
+        if (route.day1.waypoints && route.day1.waypoints.length > 0) {
+          route.day1.waypoints.forEach((waypoint) => {
+            waypoints.push(this.formatLocationForGeocoding(waypoint, country));
+          });
+        }
+
+        // Add day 1 end point
+        if (route.day1.end && route.day1.end !== route.day1.start) {
+          waypoints.push(
+            this.formatLocationForGeocoding(route.day1.end, country)
+          );
+        }
+      }
+
+      // For cycling routes, add day 2 waypoints
+      if (route.day2) {
+        // Day 2 start should be same as day 1 end, so skip it
+
+        // Add day 2 waypoints
+        if (route.day2.waypoints && route.day2.waypoints.length > 0) {
+          route.day2.waypoints.forEach((waypoint) => {
+            waypoints.push(this.formatLocationForGeocoding(waypoint, country));
+          });
+        }
+
+        // Add day 2 end point
+        if (route.day2.end) {
+          waypoints.push(
+            this.formatLocationForGeocoding(route.day2.end, country)
+          );
+        }
+      }
+
+      // Remove duplicates while preserving order
+      const uniqueWaypoints = [];
+      const seen = new Set();
+
+      waypoints.forEach((waypoint) => {
+        const normalized = waypoint.toLowerCase().trim();
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          uniqueWaypoints.push(waypoint);
+        }
+      });
+
+      console.log(
+        `Extracted ${uniqueWaypoints.length} unique waypoints from ${waypoints.length} total`
+      );
+      return uniqueWaypoints;
+    } catch (error) {
+      console.error("Error extracting waypoints:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Format location for geocoding by adding country context
+   * @param {string} location - Location name from LLM
+   * @param {string} country - Country name for context
+   * @returns {string} Formatted location string
+   */
+  formatLocationForGeocoding(location, country) {
+    if (!location) return "";
+
+    // Clean up the location string
+    const cleanLocation = location.trim();
+
+    // If location already contains country, return as-is
+    if (cleanLocation.toLowerCase().includes(country.toLowerCase())) {
+      return cleanLocation;
+    }
+
+    // Add country context for better geocoding accuracy
+    return `${cleanLocation}, ${country}`;
+  }
+
+  /**
+   * Generate mock coordinates (fallback when geocoding fails)
+   * @param {string} country - Country name
+   * @param {string} city - City name (optional)
+   * @param {Object} route - Route data
+   * @returns {Array} Array of [lat, lng] coordinates
+   */
+  generateMockCoordinates(country, city, route) {
+    console.log("Using fallback mock coordinates");
+
+    // Get base coordinates for the country
+    const baseCoords = this.getCountryBaseCoordinates(country);
+
+    const coordinates = [];
+    const numPoints = 15; // Generate more points for smoother routes
+
+    for (let i = 0; i < numPoints; i++) {
+      const progress = i / (numPoints - 1);
+
+      // Create a more realistic mock route pattern
+      const latOffset =
+        Math.sin(progress * Math.PI * 2) * 0.05 + (Math.random() - 0.5) * 0.02;
+      const lngOffset =
+        Math.cos(progress * Math.PI * 1.5) * 0.05 +
+        (Math.random() - 0.5) * 0.02;
+
+      coordinates.push([baseCoords[0] + latOffset, baseCoords[1] + lngOffset]);
+    }
+
+    console.log(`Generated ${coordinates.length} mock coordinates as fallback`);
+    return coordinates;
   }
 
   /**
@@ -420,45 +596,56 @@ Return ONLY a JSON object in this exact format:
   }
 
   /**
-   * Generate mock coordinates (to be replaced with real geocoding later)
-   */
-  generateMockCoordinates(country, city, route) {
-    // Mock coordinates - in next phase we'll use geocoding API
-    // For now, generate some reasonable coordinates
-    const baseCoords = this.getCountryBaseCoordinates(country);
-
-    const coordinates = [];
-    const numPoints = 10; // Generate 10 points for the route
-
-    for (let i = 0; i < numPoints; i++) {
-      const latOffset = (Math.random() - 0.5) * 0.1; // ±0.05 degrees
-      const lngOffset = (Math.random() - 0.5) * 0.1;
-
-      coordinates.push([baseCoords[0] + latOffset, baseCoords[1] + lngOffset]);
-    }
-
-    return coordinates;
-  }
-
-  /**
-   * Get approximate base coordinates for a country (simplified)
+   * Get approximate base coordinates for a country (used for fallback)
+   * @param {string} country - Country name
+   * @returns {Array} [lat, lng] coordinates
    */
   getCountryBaseCoordinates(country) {
     const countryCoords = {
+      // European countries
       france: [46.2276, 2.2137],
       spain: [40.4637, -3.7492],
       italy: [41.8719, 12.5674],
       germany: [51.1657, 10.4515],
+      "united kingdom": [55.3781, -3.436],
       uk: [55.3781, -3.436],
+      britain: [55.3781, -3.436],
       switzerland: [46.8182, 8.2275],
       austria: [47.5162, 14.5501],
       portugal: [39.3999, -8.2245],
       netherlands: [52.1326, 5.2913],
       belgium: [50.5039, 4.4699],
+      norway: [60.472, 8.4689],
+      sweden: [60.1282, 18.6435],
+      denmark: [56.2639, 9.5018],
+
+      // North American countries
+      "united states": [39.8283, -98.5795],
+      usa: [39.8283, -98.5795],
+      canada: [56.1304, -106.3468],
+      mexico: [23.6345, -102.5528],
+
+      // Other popular destinations
+      japan: [36.2048, 138.2529],
+      australia: [-25.2744, 133.7751],
+      "new zealand": [-40.9006, 174.886],
+      chile: [-35.6751, -71.543],
+      argentina: [-38.4161, -63.6167],
+      brazil: [-14.235, -51.9253],
+      peru: [-9.19, -75.0152],
+      colombia: [4.5709, -74.2973],
     };
 
-    const normalized = country.toLowerCase();
-    return countryCoords[normalized] || [50.0, 10.0]; // Default to central Europe
+    const normalized = country.toLowerCase().trim();
+    const coords = countryCoords[normalized];
+
+    if (coords) {
+      console.log(`Found coordinates for ${country}:`, coords);
+      return coords;
+    }
+
+    console.warn(`No coordinates found for "${country}", using default`);
+    return [50.0, 10.0]; // Default to central Europe
   }
 }
 
