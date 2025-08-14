@@ -5,65 +5,44 @@ const routingService = require("./routingService");
 
 class LLMService {
   constructor() {
-    // Initialize Google Gemini client
-    this.genAI = new GoogleGenAI({});
-    
-    // Configure primary model (Gemini 2.5 Pro for better geographic knowledge)
+    // Initialize Google GenAI client with new SDK
+    this.genAI = null;
+
+    // Configure primary and fallback models
     this.primaryModel = "gemini-2.5-pro";
     this.fallbackModel = "gemini-1.5-pro-002";
 
-    // Initialize model instances
-    this.model = null;
-    this.fallbackModelInstance = null;
+    this.initializeGenAI();
 
-    this.initializeModels();
-
-    console.log("LLM Service initialized with Google Gemini models:", [
+    console.log("LLM Service initialized with new Google GenAI SDK:", [
       this.primaryModel,
       this.fallbackModel,
     ]);
   }
 
   /**
-   * Initialize Gemini model instances
+   * Initialize Google GenAI client with new SDK
    */
-  initializeModels() {
+  initializeGenAI() {
     try {
       if (!process.env.GEMINI_API_KEY) {
         throw new Error("GEMINI_API_KEY not found in environment variables");
       }
 
-      // Primary model configuration for geographic accuracy
-      this.model = this.genAI.getGenerativeModel({
-        model: this.primaryModel,
-        generationConfig: {
-          temperature: 0.3, // Lower temperature for more consistent geographic responses
-          topP: 0.8,
-          topK: 40,
-          maxOutputTokens: 2048,
-        },
-      });
+      // Initialize the new GoogleGenAI client - it automatically picks up GEMINI_API_KEY from env
+      this.genAI = new GoogleGenAI({});
 
-      // Fallback model
-      this.fallbackModelInstance = this.genAI.getGenerativeModel({
-        model: this.fallbackModel,
-        generationConfig: {
-          temperature: 0.4,
-          topP: 0.9,
-          topK: 40,
-          maxOutputTokens: 2048,
-        },
-      });
-
-      console.log("✓ Gemini models initialized successfully");
+      console.log(
+        "✓ Google GenAI client initialized successfully with new SDK"
+      );
     } catch (error) {
-      console.error("Failed to initialize Gemini models:", error.message);
+      console.error("Failed to initialize Google GenAI client:", error.message);
       throw error;
     }
   }
 
   /**
-   * Generate a trip route using Gemini with enhanced geographic prompting
+   * Generate a trip route using new Google GenAI SDK
    * @param {string} country - Country/region for the trip
    * @param {string} tripType - 'cycling' or 'trekking'
    * @param {string} city - Optional city specification
@@ -74,7 +53,9 @@ class LLMService {
 
     try {
       console.log(
-        `🚀 Generating ${tripType} route for ${city || country} using Gemini`
+        `🚀 Generating ${tripType} route for ${
+          city || country
+        } using new GenAI SDK`
       );
 
       // Build enhanced geographic prompt
@@ -91,7 +72,7 @@ class LLMService {
 
       try {
         console.log(`Attempting route generation with ${this.primaryModel}`);
-        geminiResult = await this.callGeminiWithRetry(this.model, prompt);
+        geminiResult = await this.callGenAIWithRetry(this.primaryModel, prompt);
         modelUsed = this.primaryModel;
         console.log("✓ Primary Gemini model succeeded");
       } catch (primaryError) {
@@ -99,8 +80,8 @@ class LLMService {
         console.log(`Falling back to ${this.fallbackModel}`);
 
         try {
-          geminiResult = await this.callGeminiWithRetry(
-            this.fallbackModelInstance,
+          geminiResult = await this.callGenAIWithRetry(
+            this.fallbackModel,
             prompt
           );
           modelUsed = this.fallbackModel;
@@ -142,19 +123,114 @@ class LLMService {
         imageData: imageData || null,
         generationMetadata: {
           llmModel: modelUsed,
-          llmProvider: "Google Gemini",
+          llmProvider: "Google Gemini (New SDK)",
           prompt: prompt,
           processingTime: processingTime,
           generatedAt: new Date(),
           imageRetrieved: !!imageData,
           routingMethod: processedRoute.routingMetadata?.method || "fallback",
-          temperature: modelUsed === this.primaryModel ? 0.3 : 0.4,
+          sdkVersion: "new_genai_2024",
         },
       };
     } catch (error) {
       console.error("❌ Gemini Route Generation Error:", error);
       throw new Error(`Failed to generate route with Gemini: ${error.message}`);
     }
+  }
+
+  /**
+   * Call new Google GenAI API with retry logic
+   * @param {string} modelName - Model name to use
+   * @param {string} prompt - The prompt to send
+   * @param {number} maxRetries - Maximum retry attempts
+   * @returns {string} Model response text
+   */
+  async callGenAIWithRetry(modelName, prompt, maxRetries = 3) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(
+          `📤 GenAI API attempt ${attempt}/${maxRetries} with ${modelName}`
+        );
+
+        // Build config based on model capabilities
+        const config = {
+          temperature: modelName === this.primaryModel ? 0.3 : 0.4,
+          topP: 0.8,
+          topK: 40,
+          maxOutputTokens: 2048,
+        };
+
+        // Configure thinking for 2.5 series models (they require thinking mode)
+        if (modelName.includes("2.5")) {
+          // Use moderate thinking budget for structured geographic responses
+          config.thinkingConfig = {
+            thinkingBudget: 1024, // Use 1024 tokens for thinking (moderate amount)
+          };
+          console.log(
+            `🧠 Using thinking mode with 1024 token budget for ${modelName}`
+          );
+        } else {
+          // For non-2.5 models, don't include thinking config
+          console.log(`🚀 Using standard mode for ${modelName}`);
+        }
+
+        // Use new SDK API structure
+        const response = await this.genAI.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: config,
+        });
+
+        const text = response.text;
+
+        if (!text || text.trim().length === 0) {
+          throw new Error("Empty response from Gemini API");
+        }
+
+        console.log(`✓ GenAI API call successful on attempt ${attempt}`);
+        console.log(`Response preview: ${text.substring(0, 200)}...`);
+        return text;
+      } catch (error) {
+        console.warn(`⚠️ GenAI attempt ${attempt} failed:`, error.message);
+        lastError = error;
+
+        // Handle specific GenAI API errors
+        if (error.message && error.message.includes("SAFETY")) {
+          throw new Error("Content blocked by Gemini safety filters");
+        }
+
+        if (error.message && error.message.includes("QUOTA_EXCEEDED")) {
+          throw new Error("Gemini API quota exceeded");
+        }
+
+        if (error.message && error.message.includes("API_KEY")) {
+          throw new Error("Invalid Gemini API key");
+        }
+
+        if (error.message && error.message.includes("INVALID_ARGUMENT")) {
+          throw new Error(
+            `Invalid request format sent to Gemini API: ${error.message}`
+          );
+        }
+
+        if (error.message && error.message.includes("Budget")) {
+          throw new Error(
+            `Thinking budget error for ${modelName}: ${error.message}`
+          );
+        }
+
+        // Wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          const waitTime = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+          console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    throw lastError || new Error("All GenAI API attempts failed");
   }
 
   /**
@@ -258,59 +334,6 @@ Return ONLY valid JSON in this exact format:
 
 Remember: Distance must be 5-15km total. Route must be circular (same start/end). Verify locations exist.`;
     }
-  }
-
-  /**
-   * Call Gemini API with retry logic
-   * @param {Object} modelInstance - Gemini model instance
-   * @param {string} prompt - The prompt to send
-   * @param {number} maxRetries - Maximum retry attempts
-   * @returns {string} Model response text
-   */
-  async callGeminiWithRetry(modelInstance, prompt, maxRetries = 3) {
-    let lastError = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`📤 Gemini API attempt ${attempt}/${maxRetries}`);
-
-        const result = await modelInstance.generateContent(prompt);
-        const response = await result.response;
-        const text = response.text();
-
-        if (!text || text.trim().length === 0) {
-          throw new Error("Empty response from Gemini API");
-        }
-
-        console.log(`✓ Gemini API call successful on attempt ${attempt}`);
-        return text;
-      } catch (error) {
-        console.warn(`⚠️ Gemini attempt ${attempt} failed:`, error.message);
-        lastError = error;
-
-        // Handle specific Gemini API errors
-        if (error.message.includes("SAFETY")) {
-          throw new Error("Content blocked by Gemini safety filters");
-        }
-
-        if (error.message.includes("QUOTA_EXCEEDED")) {
-          throw new Error("Gemini API quota exceeded");
-        }
-
-        if (error.message.includes("API_KEY")) {
-          throw new Error("Invalid Gemini API key");
-        }
-
-        // Wait before retry (exponential backoff)
-        if (attempt < maxRetries) {
-          const waitTime = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
-          console.log(`⏳ Waiting ${waitTime}ms before retry...`);
-          await new Promise((resolve) => setTimeout(resolve, waitTime));
-        }
-      }
-    }
-
-    throw lastError || new Error("All Gemini API attempts failed");
   }
 
   /**
@@ -912,16 +935,15 @@ Remember: Distance must be 5-15km total. Route must be circular (same start/end)
       primaryModel: this.primaryModel,
       fallbackModel: this.fallbackModel,
       hasApiKey: !!process.env.GEMINI_API_KEY,
-      modelsInitialized: !!(this.model && this.fallbackModelInstance),
-      temperature: {
-        primary: 0.3,
-        fallback: 0.4,
-      },
+      clientInitialized: !!this.genAI,
+      sdkVersion: "new_genai_2024",
       features: [
         "Enhanced geographic knowledge",
         "Realistic distance validation",
         "Real road/trail routing integration",
         "Dual model fallback system",
+        "Thinking mode for 2.5 series models",
+        "Optimized thinking budget (1024 tokens)",
       ],
     };
   }
