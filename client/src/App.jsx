@@ -14,37 +14,10 @@ import { Map, History } from "lucide-react";
 import LoginPage from "./pages/auth/LoginPage";
 import RegisterPage from "./pages/auth/RegisterPage";
 import PlanningPage from "./pages/PlanningPage";
-// import HistoryPage from "./pages/HistoryPage";    // Will create later
+import HistoryPage from "./pages/HistoryPage";
 
 // Import the Layout component
 import Layout from "./components/layout/Layout";
-
-// Temporary placeholder component for HistoryPage
-const HistoryPage = () => (
-  <Layout>
-    <div className="max-w-6xl mx-auto px-6 py-8">
-      <div className="text-center">
-        <h1 className="text-3xl font-semibold text-gray-900 mb-4">
-          My Saved Routes
-        </h1>
-        <p className="text-gray-600 mb-6">
-          History page coming soon! This is where you'll view your saved routes.
-        </p>
-        <div className="bg-white rounded-xl shadow-soft border border-gray-200 p-8">
-          <p className="text-gray-500 mb-4">This page will include:</p>
-          <ul className="text-left text-gray-600 space-y-2 max-w-md mx-auto">
-            <li>• List of all saved routes</li>
-            <li>• Route preview cards</li>
-            <li>• Click to load route on map</li>
-            <li>• Get current weather for routes</li>
-            <li>• Delete route functionality</li>
-            <li>• Filter by trip type</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </Layout>
-);
 
 const HomePage = () => {
   const { isAuthenticated, user } = useAuth();
