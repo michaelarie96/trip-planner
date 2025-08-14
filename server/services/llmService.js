@@ -1,28 +1,69 @@
-const { InferenceClient } = require("@huggingface/inference");
+const { GoogleGenAI } = require("@google/genai");
 const imageService = require("./imageService");
 const geocodingService = require("./geocodingService");
 const routingService = require("./routingService");
 
 class LLMService {
   constructor() {
-    // Initialize Hugging Face client
-    this.hf = new InferenceClient(process.env.HUGGINGFACE_API_KEY);
+    // Initialize Google Gemini client
+    this.genAI = new GoogleGenAI({});
+    
+    // Configure primary model (Gemini 2.5 Pro for better geographic knowledge)
+    this.primaryModel = "gemini-2.5-pro";
+    this.fallbackModel = "gemini-1.5-pro-002";
 
-    // Configure models with fallback chain
-    this.primaryModel =
-      process.env.PRIMARY_LLM_MODEL || "meta-llama/Llama-3.2-3B-Instruct";
-    this.fallbackModels = process.env.FALLBACK_LLM_MODELS
-      ? process.env.FALLBACK_LLM_MODELS.split(",")
-      : ["microsoft/DialoGPT-medium"];
+    // Initialize model instances
+    this.model = null;
+    this.fallbackModelInstance = null;
 
-    // All available models in order of preference
-    this.modelChain = [this.primaryModel, ...this.fallbackModels];
+    this.initializeModels();
 
-    console.log("LLM Service initialized with models:", this.modelChain);
+    console.log("LLM Service initialized with Google Gemini models:", [
+      this.primaryModel,
+      this.fallbackModel,
+    ]);
   }
 
   /**
-   * Generate a trip route using LLM with real routing integration
+   * Initialize Gemini model instances
+   */
+  initializeModels() {
+    try {
+      if (!process.env.GEMINI_API_KEY) {
+        throw new Error("GEMINI_API_KEY not found in environment variables");
+      }
+
+      // Primary model configuration for geographic accuracy
+      this.model = this.genAI.getGenerativeModel({
+        model: this.primaryModel,
+        generationConfig: {
+          temperature: 0.3, // Lower temperature for more consistent geographic responses
+          topP: 0.8,
+          topK: 40,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      // Fallback model
+      this.fallbackModelInstance = this.genAI.getGenerativeModel({
+        model: this.fallbackModel,
+        generationConfig: {
+          temperature: 0.4,
+          topP: 0.9,
+          topK: 40,
+          maxOutputTokens: 2048,
+        },
+      });
+
+      console.log("✓ Gemini models initialized successfully");
+    } catch (error) {
+      console.error("Failed to initialize Gemini models:", error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a trip route using Gemini with enhanced geographic prompting
    * @param {string} country - Country/region for the trip
    * @param {string} tripType - 'cycling' or 'trekking'
    * @param {string} city - Optional city specification
@@ -32,104 +73,269 @@ class LLMService {
     const startTime = Date.now();
 
     try {
-      // Build the prompt based on trip type
-      const prompt = this.buildRoutePrompt(country, tripType, city);
-      console.log("Generated prompt for LLM");
+      console.log(
+        `🚀 Generating ${tripType} route for ${city || country} using Gemini`
+      );
 
-      // Try each model in the chain until one succeeds
-      let lastError = null;
+      // Build enhanced geographic prompt
+      const prompt = this.buildEnhancedGeographicPrompt(
+        country,
+        tripType,
+        city
+      );
+      console.log("Generated enhanced geographic prompt for Gemini");
 
-      for (let i = 0; i < this.modelChain.length; i++) {
-        const model = this.modelChain[i];
-        console.log(`Attempting route generation with model: ${model}`);
+      // Try primary model first, then fallback
+      let geminiResult = null;
+      let modelUsed = null;
+
+      try {
+        console.log(`Attempting route generation with ${this.primaryModel}`);
+        geminiResult = await this.callGeminiWithRetry(this.model, prompt);
+        modelUsed = this.primaryModel;
+        console.log("✓ Primary Gemini model succeeded");
+      } catch (primaryError) {
+        console.warn(`Primary model failed: ${primaryError.message}`);
+        console.log(`Falling back to ${this.fallbackModel}`);
 
         try {
-          const llmResult = await this.callLLMWithRetry(prompt, model);
-          console.log("LLM generated route structure successfully");
-
-          const processedRoute = await this.processLLMResponseWithRealRouting(
-            llmResult,
-            tripType,
-            country,
-            city
+          geminiResult = await this.callGeminiWithRetry(
+            this.fallbackModelInstance,
+            prompt
           );
-
-          const processingTime = Date.now() - startTime;
-          console.log(
-            `Route generated successfully with ${model} in ${processingTime}ms`
+          modelUsed = this.fallbackModel;
+          console.log("✓ Fallback Gemini model succeeded");
+        } catch (fallbackError) {
+          throw new Error(
+            `Both Gemini models failed. Primary: ${primaryError.message}, Fallback: ${fallbackError.message}`
           );
-
-          // Try to get a representative image for the country
-          let imageData = null;
-          try {
-            console.log("Fetching country image...");
-            imageData = await imageService.getImage(country, city);
-            console.log("Country image retrieved successfully");
-          } catch (imageError) {
-            console.warn("Failed to get country image:", imageError.message);
-            // Don't fail route generation if image fails
-          }
-
-          return {
-            ...processedRoute,
-            imageUrl: imageData?.imageUrl || null,
-            imageData: imageData || null,
-            generationMetadata: {
-              llmModel: model,
-              prompt: prompt,
-              processingTime: processingTime,
-              generatedAt: new Date(),
-              attemptNumber: i + 1,
-              imageRetrieved: !!imageData,
-              routingMethod:
-                processedRoute.routingMetadata?.method || "fallback",
-            },
-          };
-        } catch (error) {
-          console.warn(`Model ${model} failed:`, error.message);
-          lastError = error;
-
-          // If this isn't the last model, continue to next
-          if (i < this.modelChain.length - 1) {
-            console.log(`Falling back to next model...`);
-            continue;
-          }
         }
       }
 
-      // If all models failed, throw the last error
-      throw new Error(
-        `All LLM models failed. Last error: ${
-          lastError?.message || "Unknown error"
-        }`
+      // Process the Gemini response with real routing
+      const processedRoute = await this.processGeminiResponseWithRealRouting(
+        geminiResult,
+        tripType,
+        country,
+        city
       );
+
+      const processingTime = Date.now() - startTime;
+      console.log(
+        `✅ Route generated successfully with ${modelUsed} in ${processingTime}ms`
+      );
+
+      // Try to get a representative image for the country
+      let imageData = null;
+      try {
+        console.log("🖼️ Fetching country image...");
+        imageData = await imageService.getImage(country, city);
+        console.log("✓ Country image retrieved successfully");
+      } catch (imageError) {
+        console.warn("⚠️ Failed to get country image:", imageError.message);
+        // Don't fail route generation if image fails
+      }
+
+      return {
+        ...processedRoute,
+        imageUrl: imageData?.imageUrl || null,
+        imageData: imageData || null,
+        generationMetadata: {
+          llmModel: modelUsed,
+          llmProvider: "Google Gemini",
+          prompt: prompt,
+          processingTime: processingTime,
+          generatedAt: new Date(),
+          imageRetrieved: !!imageData,
+          routingMethod: processedRoute.routingMetadata?.method || "fallback",
+          temperature: modelUsed === this.primaryModel ? 0.3 : 0.4,
+        },
+      };
     } catch (error) {
-      console.error("LLM Route Generation Error:", error);
-      throw new Error(`Failed to generate route: ${error.message}`);
+      console.error("❌ Gemini Route Generation Error:", error);
+      throw new Error(`Failed to generate route with Gemini: ${error.message}`);
     }
   }
 
   /**
-   * Process LLM response and generate real routing coordinates
-   * @param {string} llmResponse - Raw LLM response
-   * @param {string} tripType - Type of trip
+   * Build enhanced geographic prompt specifically designed for Gemini's strengths
    * @param {string} country - Country name
-   * @param {string} city - City name
-   * @returns {Object} Processed route data with real coordinates
+   * @param {string} tripType - 'cycling' or 'trekking'
+   * @param {string} city - Optional city
+   * @returns {string} Enhanced prompt for better geographic accuracy
    */
-  async processLLMResponseWithRealRouting(
-    llmResponse,
+  buildEnhancedGeographicPrompt(country, tripType, city) {
+    const location = city ? `${city}, ${country}` : country;
+
+    // Base geographic context to help Gemini understand the requirements
+    const geographicContext = `You are a local travel expert with extensive knowledge of ${country}. 
+You must create a realistic route using actual places, real distances, and practical travel times.
+CRITICAL: Verify all distances are realistic and achievable for the specified activity.`;
+
+    if (tripType === "cycling") {
+      return `${geographicContext}
+
+Create a realistic 2-day cycling route in ${location} following these STRICT requirements:
+
+DISTANCE CONSTRAINTS (MUST FOLLOW):
+- Day 1: Maximum 60km cycling distance
+- Day 2: Maximum 60km cycling distance
+- Total route: Maximum 120km over 2 days
+- Use actual road distances, not straight-line distances
+
+ROUTE REQUIREMENTS:
+- Start and end in different cities/towns (city-to-city route)
+- Day 2 starts where Day 1 ends
+- Follow actual roads suitable for cycling
+- Include real cities, towns, and landmarks that exist
+- Verify distances between locations are realistic for cycling
+
+LOCATION SPECIFICITY:
+- Use actual city names, not generic descriptions
+- Include real landmarks, villages, or cycling-popular areas
+- Consider local geography and terrain
+- Mention actual roads or cycling routes if known
+
+Return ONLY valid JSON in this exact format:
+{
+  "route": {
+    "day1": {
+      "start": "Actual Starting City Name",
+      "end": "Actual Ending City Name",
+      "distance": 45,
+      "waypoints": ["Real Town/Landmark 1", "Real Town/Landmark 2"]
+    },
+    "day2": {
+      "start": "Same as Day 1 end",
+      "end": "Final Real Destination",
+      "distance": 50,
+      "waypoints": ["Real Town/Landmark 3", "Real Town/Landmark 4"]
+    },
+    "totalDistance": 95,
+    "estimatedDuration": "2 days",
+    "difficulty": "moderate"
+  }
+}
+
+Remember: Each day must be under 60km. Verify your distances are realistic for the actual locations.`;
+    } else {
+      return `${geographicContext}
+
+Create a realistic circular trekking route in ${location} following these STRICT requirements:
+
+DISTANCE CONSTRAINTS (MUST FOLLOW):
+- Total distance: Between 5-15km only
+- Circular route (start and end at same location)
+- Walking/hiking pace, not cycling
+- Achievable in one day (4-8 hours maximum)
+
+ROUTE REQUIREMENTS:
+- Start and end at the exact same point (circular route)
+- Follow actual hiking trails, walking paths, or nature routes
+- Include real landmarks, viewpoints, or natural features
+- Use realistic hiking distances and times
+
+LOCATION SPECIFICITY:
+- Name actual trailheads, parks, or hiking areas
+- Include real natural landmarks (lakes, hills, forests)
+- Consider local terrain and elevation
+- Mention actual trail names or hiking routes if known
+
+Return ONLY valid JSON in this exact format:
+{
+  "route": {
+    "day1": {
+      "start": "Real Trailhead/Starting Point Name",
+      "end": "Same Trailhead/Starting Point Name",
+      "distance": 8,
+      "waypoints": ["Real Landmark 1", "Real Viewpoint/Summit", "Real Natural Feature", "Real Trail Junction"]
+    },
+    "totalDistance": 8,
+    "estimatedDuration": "1 day",
+    "difficulty": "moderate"
+  }
+}
+
+Remember: Distance must be 5-15km total. Route must be circular (same start/end). Verify locations exist.`;
+    }
+  }
+
+  /**
+   * Call Gemini API with retry logic
+   * @param {Object} modelInstance - Gemini model instance
+   * @param {string} prompt - The prompt to send
+   * @param {number} maxRetries - Maximum retry attempts
+   * @returns {string} Model response text
+   */
+  async callGeminiWithRetry(modelInstance, prompt, maxRetries = 3) {
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`📤 Gemini API attempt ${attempt}/${maxRetries}`);
+
+        const result = await modelInstance.generateContent(prompt);
+        const response = await result.response;
+        const text = response.text();
+
+        if (!text || text.trim().length === 0) {
+          throw new Error("Empty response from Gemini API");
+        }
+
+        console.log(`✓ Gemini API call successful on attempt ${attempt}`);
+        return text;
+      } catch (error) {
+        console.warn(`⚠️ Gemini attempt ${attempt} failed:`, error.message);
+        lastError = error;
+
+        // Handle specific Gemini API errors
+        if (error.message.includes("SAFETY")) {
+          throw new Error("Content blocked by Gemini safety filters");
+        }
+
+        if (error.message.includes("QUOTA_EXCEEDED")) {
+          throw new Error("Gemini API quota exceeded");
+        }
+
+        if (error.message.includes("API_KEY")) {
+          throw new Error("Invalid Gemini API key");
+        }
+
+        // Wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          const waitTime = Math.pow(2, attempt) * 1000; // 2s, 4s, 8s
+          console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
+    }
+
+    throw lastError || new Error("All Gemini API attempts failed");
+  }
+
+  /**
+   * Process Gemini response and generate real routing coordinates
+   * Uses the same logic as before but with enhanced error handling for Gemini
+   */
+  async processGeminiResponseWithRealRouting(
+    geminiResponse,
     tripType,
     country,
     city
   ) {
     try {
-      console.log("Processing LLM response with real routing...");
+      console.log("🔄 Processing Gemini response with real routing...");
 
-      // Extract and validate LLM JSON response
-      const jsonMatch = llmResponse.match(/\{[\s\S]*\}/);
+      // Extract JSON from Gemini response (may have markdown formatting)
+      let jsonText = geminiResponse.trim();
+
+      // Remove markdown code blocks if present
+      jsonText = jsonText.replace(/```json\s*/, "").replace(/```\s*$/, "");
+
+      // Find JSON object in response
+      const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        throw new Error("No JSON found in LLM response");
+        throw new Error("No JSON found in Gemini response");
       }
 
       const parsedResponse = JSON.parse(jsonMatch[0]);
@@ -139,17 +345,18 @@ class LLMService {
       }
 
       const route = parsedResponse.route;
-      this.validateRouteData(route, tripType);
 
-      console.log("LLM route structure validated successfully");
+      // Enhanced validation for Gemini responses
+      this.validateGeminiRouteData(route, tripType);
+      console.log("✓ Gemini route structure validated successfully");
 
-      // Extract waypoints from LLM response
+      // Extract waypoints from Gemini response
       const waypointNames = this.extractWaypointsFromRoute(
         route,
         country,
         city
       );
-      console.log("Extracted waypoints:", waypointNames);
+      console.log("📍 Extracted waypoints:", waypointNames);
 
       // Generate realistic coordinates using geocoding + routing
       const coordinatesResult = await this.generateRealRouteCoordinates(
@@ -185,14 +392,79 @@ class LLMService {
       };
 
       console.log(
-        `Route processed successfully: ${processedRoute.routeData.totalDistance}km with ${processedRoute.routeData.coordinates.length} coordinates`
+        `✅ Route processed: ${processedRoute.routeData.totalDistance}km with ${processedRoute.routeData.coordinates.length} coordinates`
       );
       return processedRoute;
     } catch (error) {
-      console.error("Error processing LLM response with routing:", error);
-      console.error("Raw LLM response:", llmResponse);
-      throw new Error(`Failed to process LLM response: ${error.message}`);
+      console.error("❌ Error processing Gemini response:", error);
+      console.error("Raw Gemini response:", geminiResponse);
+      throw new Error(`Failed to process Gemini response: ${error.message}`);
     }
+  }
+
+  /**
+   * Enhanced validation specifically for Gemini responses
+   * @param {Object} route - Route data from Gemini
+   * @param {string} tripType - Trip type
+   */
+  validateGeminiRouteData(route, tripType) {
+    if (!route.day1) {
+      throw new Error("Missing day1 route data in Gemini response");
+    }
+
+    // Validate required fields
+    if (!route.day1.start || !route.day1.end || !route.day1.distance) {
+      throw new Error("Incomplete day1 data in Gemini response");
+    }
+
+    if (tripType === "cycling") {
+      if (!route.day2) {
+        throw new Error("Cycling routes must have day2 data");
+      }
+
+      if (!route.day2.start || !route.day2.end || !route.day2.distance) {
+        throw new Error("Incomplete day2 data in Gemini response");
+      }
+
+      // Strict distance validation for cycling
+      if (route.day1.distance > 60) {
+        throw new Error(
+          `Day 1 distance ${route.day1.distance}km exceeds 60km limit`
+        );
+      }
+
+      if (route.day2.distance > 60) {
+        throw new Error(
+          `Day 2 distance ${route.day2.distance}km exceeds 60km limit`
+        );
+      }
+
+      // Validate connection between days
+      if (route.day1.end !== route.day2.start) {
+        console.warn("Warning: Day 2 should start where Day 1 ends");
+      }
+    } else if (tripType === "trekking") {
+      // Strict distance validation for trekking
+      if (route.day1.distance < 5 || route.day1.distance > 15) {
+        throw new Error(
+          `Trekking distance ${route.day1.distance}km must be between 5-15km`
+        );
+      }
+
+      // Validate circular route for trekking
+      if (route.day1.start !== route.day1.end) {
+        console.warn(
+          "Warning: Trekking route should be circular (same start/end point)"
+        );
+      }
+    }
+
+    // Validate that distances are numbers
+    if (typeof route.day1.distance !== "number" || route.day1.distance <= 0) {
+      throw new Error("Invalid distance format in Gemini response");
+    }
+
+    console.log("✓ Gemini route data validation passed");
   }
 
   /**
@@ -295,7 +567,6 @@ class LLMService {
             waypointNames,
             tripType
           );
-
         routingMethod = "geocoding_fallback";
         console.log(
           `✓ Fallback successful: ${fallbackCoordinates.length} coordinates`
@@ -320,7 +591,6 @@ class LLMService {
 
         // Final fallback to mock coordinates
         console.log("Using final fallback: mock coordinates");
-
         const mockCoordinates = this.generateMockCoordinates(
           waypointNames[0] || "Unknown",
           null,
@@ -448,171 +718,13 @@ class LLMService {
     return totalCoordinates.slice(midPoint);
   }
 
-  // Keep existing methods that don't need changes
-  buildRoutePrompt(country, tripType, city) {
-    const location = city ? `${city}, ${country}` : country;
-
-    if (tripType === "cycling") {
-      return `Generate a realistic 2-day cycling route in ${location}.
-
-Requirements:
-- 2 consecutive days of cycling
-- Maximum 60km per day
-- City-to-city route (different start and end points for each day)
-- Follow actual roads and cycling paths
-- Include specific city/landmark names
-- Provide realistic distances in kilometers
-
-Return ONLY a JSON object in this exact format:
-{
-  "route": {
-    "day1": {
-      "start": "Starting City/Location",
-      "end": "Ending City/Location", 
-      "distance": 45,
-      "waypoints": ["Landmark 1", "Town A", "Landmark 2"]
-    },
-    "day2": {
-      "start": "Day 1 ending location",
-      "end": "Final destination",
-      "distance": 55,
-      "waypoints": ["Landmark 3", "Town B", "Landmark 4"]
-    },
-    "totalDistance": 100,
-    "estimatedDuration": "2 days",
-    "difficulty": "moderate"
-  }
-}`;
-    } else {
-      return `Generate a realistic trekking route in ${location}.
-
-Requirements:
-- Single day circular route (start and end at same point)
-- Distance between 5-15km
-- Follow actual hiking trails and paths
-- Include specific landmarks and trail names
-- Provide realistic distance in kilometers
-
-Return ONLY a JSON object in this exact format:
-{
-  "route": {
-    "day1": {
-      "start": "Starting Point/Trailhead",
-      "end": "Starting Point/Trailhead",
-      "distance": 12,
-      "waypoints": ["Trail Junction 1", "Summit/Viewpoint", "Lake/Landmark", "Trail Junction 2"]
-    },
-    "totalDistance": 12,
-    "estimatedDuration": "1 day",
-    "difficulty": "moderate"
-  }
-}`;
-    }
-  }
-
-  async callLLMWithRetry(prompt, model, maxRetries = 3) {
-    let lastError = null;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        console.log(`Attempt ${attempt}/${maxRetries} for model ${model}`);
-
-        const response = await this.hf.chatCompletion({
-          model: model,
-          messages: [{ role: "user", content: prompt }],
-          max_tokens: 1000,
-          temperature: 0.7,
-          top_p: 0.9,
-          provider: "auto",
-        });
-
-        if (
-          !response ||
-          !response.choices ||
-          !response.choices[0] ||
-          !response.choices[0].message
-        ) {
-          throw new Error("Empty or invalid response from LLM");
-        }
-
-        return response.choices[0].message.content;
-      } catch (error) {
-        console.warn(`Attempt ${attempt} failed for ${model}:`, error.message);
-        lastError = error;
-
-        if (attempt === 1 && error.message.includes("chat")) {
-          try {
-            console.log(`Trying textGeneration fallback for ${model}`);
-            const textResponse = await this.hf.textGeneration({
-              model: model,
-              inputs: prompt,
-              parameters: {
-                max_new_tokens: 1000,
-                temperature: 0.7,
-                top_p: 0.9,
-                do_sample: true,
-                stop: ["Human:", "User:", "\n\nHuman", "\n\nUser"],
-              },
-            });
-
-            if (!textResponse || !textResponse.generated_text) {
-              throw new Error("Empty response from LLM textGeneration");
-            }
-
-            return textResponse.generated_text;
-          } catch (textError) {
-            console.warn(
-              "textGeneration fallback also failed:",
-              textError.message
-            );
-            lastError = textError;
-          }
-        }
-
-        if (attempt < maxRetries) {
-          const waitTime = Math.pow(2, attempt) * 1000;
-          console.log(`Waiting ${waitTime}ms before retry...`);
-          await new Promise((resolve) => setTimeout(resolve, waitTime));
-        }
-      }
-    }
-
-    throw lastError;
-  }
-
-  validateRouteData(route, tripType) {
-    if (!route.day1) {
-      throw new Error("Missing day1 route data");
-    }
-
-    if (tripType === "cycling") {
-      if (!route.day2) {
-        throw new Error("Cycling routes must have day2 data");
-      }
-
-      if (route.day1.distance > 60 || route.day2.distance > 60) {
-        throw new Error("Cycling route exceeds 60km per day limit");
-      }
-
-      if (route.day1.start === route.day1.end) {
-        throw new Error("Cycling route day1 start and end should be different");
-      }
-    }
-
-    if (tripType === "trekking") {
-      if (route.day1.distance < 5 || route.day1.distance > 15) {
-        console.warn(
-          "Trekking route distance outside 5-15km range:",
-          route.day1.distance
-        );
-      }
-
-      if (route.day1.start !== route.day1.end) {
-        console.warn("Trekking route should be circular (same start/end)");
-      }
-    }
-  }
-
+  /**
+   * Extract waypoints from route data for geocoding
+   * @param {Object} route - Route data from LLM
+   * @param {string} country - Country name
+   * @param {string} city - City name
+   * @returns {Array} Array of waypoint names for geocoding
+   */
   extractWaypointsFromRoute(route, country, city) {
     const waypoints = [];
 
@@ -651,6 +763,7 @@ Return ONLY a JSON object in this exact format:
         }
       }
 
+      // Remove duplicates
       const uniqueWaypoints = [];
       const seen = new Set();
 
@@ -672,6 +785,12 @@ Return ONLY a JSON object in this exact format:
     }
   }
 
+  /**
+   * Format location for geocoding API
+   * @param {string} location - Raw location name
+   * @param {string} country - Country name
+   * @returns {string} Formatted location string
+   */
   formatLocationForGeocoding(location, country) {
     if (!location) return "";
 
@@ -684,6 +803,11 @@ Return ONLY a JSON object in this exact format:
     return `${cleanLocation}, ${country}`;
   }
 
+  /**
+   * Calculate total distance from route data
+   * @param {Object} route - Route data
+   * @returns {number} Total distance in kilometers
+   */
   calculateTotalDistance(route) {
     let total = 0;
     if (route.day1 && route.day1.distance) total += route.day1.distance;
@@ -691,10 +815,22 @@ Return ONLY a JSON object in this exact format:
     return total || route.totalDistance || 0;
   }
 
+  /**
+   * Get default duration for trip type
+   * @param {string} tripType - Trip type
+   * @returns {string} Default duration string
+   */
   getDefaultDuration(tripType) {
     return tripType === "cycling" ? "2 days" : "1 day";
   }
 
+  /**
+   * Generate mock coordinates as final fallback
+   * @param {string} country - Country name
+   * @param {string} city - City name
+   * @param {Object} route - Route data
+   * @returns {Array} Array of mock coordinates
+   */
   generateMockCoordinates(country, city, route) {
     console.log("Using fallback mock coordinates");
 
@@ -718,6 +854,11 @@ Return ONLY a JSON object in this exact format:
     return coordinates;
   }
 
+  /**
+   * Get base coordinates for countries
+   * @param {string} country - Country name
+   * @returns {Array} [lat, lng] coordinates
+   */
   getCountryBaseCoordinates(country) {
     const countryCoords = {
       france: [46.2276, 2.2137],
@@ -759,6 +900,30 @@ Return ONLY a JSON object in this exact format:
 
     console.warn(`No coordinates found for "${country}", using default`);
     return [50.0, 10.0];
+  }
+
+  /**
+   * Get API usage and model information
+   * @returns {Object} Service status information
+   */
+  getServiceStatus() {
+    return {
+      provider: "Google Gemini",
+      primaryModel: this.primaryModel,
+      fallbackModel: this.fallbackModel,
+      hasApiKey: !!process.env.GEMINI_API_KEY,
+      modelsInitialized: !!(this.model && this.fallbackModelInstance),
+      temperature: {
+        primary: 0.3,
+        fallback: 0.4,
+      },
+      features: [
+        "Enhanced geographic knowledge",
+        "Realistic distance validation",
+        "Real road/trail routing integration",
+        "Dual model fallback system",
+      ],
+    };
   }
 }
 
