@@ -7,6 +7,7 @@ import {
 } from "react-router-dom";
 import { AuthProvider } from "./providers/AuthProvider";
 import ProtectedRoute, { PublicRoute } from "./components/auth/ProtectedRoute";
+import LoadingScreen from "./components/common/LoadingScreen";
 import { useAuth } from "./hooks/useAuth";
 import { Map, History } from "lucide-react";
 
@@ -140,13 +141,75 @@ const HomePage = () => {
 };
 
 /**
+ * AppContent Component - Handles routing after authentication is initialized
+ */
+const AppContent = () => {
+  const { isLoading, authInitialized } = useAuth();
+
+  // Show loading screen while authentication is being initialized
+  if (!authInitialized || isLoading) {
+    return <LoadingScreen message="Initializing application..." />;
+  }
+
+  // Once auth is initialized, show the main app
+  return (
+    <Routes>
+      {/* Public Routes - accessible without authentication */}
+      {/* Home page - anyone can access */}
+      <Route path="/" element={<HomePage />} />
+
+      {/* Auth routes - redirect if already authenticated */}
+      <Route
+        path="/login"
+        element={
+          <PublicRoute>
+            <LoginPage />
+          </PublicRoute>
+        }
+      />
+
+      <Route
+        path="/register"
+        element={
+          <PublicRoute>
+            <RegisterPage />
+          </PublicRoute>
+        }
+      />
+
+      {/* Protected Routes - require authentication */}
+      <Route
+        path="/plan"
+        element={
+          <ProtectedRoute>
+            <PlanningPage />
+          </ProtectedRoute>
+        }
+      />
+
+      <Route
+        path="/history"
+        element={
+          <ProtectedRoute>
+            <HistoryPage />
+          </ProtectedRoute>
+        }
+      />
+
+      {/* Catch-all route - redirect to home */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+};
+
+/**
  * Main App Component
  *
  * Sets up the entire application with:
  * - React Router for navigation
  * - AuthProvider for global authentication state
+ * - Loading screen during authentication initialization
  * - Route protection for authenticated/public routes
- * - Route definitions for all pages
  */
 function App() {
   console.log("App component rendering...");
@@ -155,52 +218,7 @@ function App() {
     <AuthProvider>
       <Router>
         <div className="App">
-          <Routes>
-            {/* Public Routes - accessible without authentication */}
-            {/* Home page - anyone can access */}
-            <Route path="/" element={<HomePage />} />
-
-            {/* Auth routes - redirect if already authenticated */}
-            <Route
-              path="/login"
-              element={
-                <PublicRoute>
-                  <LoginPage />
-                </PublicRoute>
-              }
-            />
-
-            <Route
-              path="/register"
-              element={
-                <PublicRoute>
-                  <RegisterPage />
-                </PublicRoute>
-              }
-            />
-
-            {/* Protected Routes - require authentication */}
-            <Route
-              path="/plan"
-              element={
-                <ProtectedRoute>
-                  <PlanningPage />
-                </ProtectedRoute>
-              }
-            />
-
-            <Route
-              path="/history"
-              element={
-                <ProtectedRoute>
-                  <HistoryPage />
-                </ProtectedRoute>
-              }
-            />
-
-            {/* Catch-all route - redirect to home */}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          <AppContent />
         </div>
       </Router>
     </AuthProvider>

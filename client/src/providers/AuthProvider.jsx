@@ -6,13 +6,17 @@ export const AuthProvider = ({ children }) => {
   // Authentication state
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true); // Start with loading true
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [authInitialized, setAuthInitialized] = useState(false); // New state to track initialization
 
   // Initialize auth state on app startup
   useEffect(() => {
     const initializeAuth = async () => {
       console.log("Initializing authentication...");
+
+      // Add a minimum loading time for better UX (prevents flash on fast connections)
+      const minLoadTime = new Promise((resolve) => setTimeout(resolve, 800));
 
       try {
         const storedToken = localStorage.getItem("authToken");
@@ -38,9 +42,14 @@ export const AuthProvider = ({ children }) => {
       } catch (error) {
         console.error("Auth initialization error:", error);
         clearAuthData();
-      } finally {
-        setIsLoading(false);
       }
+
+      // Wait for minimum load time to complete
+      await minLoadTime;
+
+      // Mark auth as initialized and stop loading
+      setAuthInitialized(true);
+      setIsLoading(false);
     };
 
     initializeAuth();
@@ -65,7 +74,6 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       console.log("Attempting login...");
-      // DON'T set global isLoading for login attempts - only for auth initialization
 
       const response = await authAPI.login({ email, password });
 
@@ -86,13 +94,11 @@ export const AuthProvider = ({ children }) => {
 
       return { success: false, message: errorMessage };
     }
-    // DON'T modify global loading state for login attempts
   };
 
   const register = async (name, email, password) => {
     try {
       console.log("Attempting registration...");
-      // DON'T set global isLoading for registration attempts
 
       const response = await authAPI.register({ name, email, password });
 
@@ -121,7 +127,6 @@ export const AuthProvider = ({ children }) => {
 
       return { success: false, message: errorMessage };
     }
-    // DON'T modify global loading state for registration attempts
   };
 
   const logout = () => {
@@ -141,6 +146,7 @@ export const AuthProvider = ({ children }) => {
     token,
     isLoading,
     isAuthenticated,
+    authInitialized,
     login,
     register,
     logout,
