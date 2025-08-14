@@ -10,7 +10,7 @@ class LLMService {
 
     // Configure primary and fallback models
     this.primaryModel = "gemini-2.5-pro";
-    this.fallbackModel = "gemini-1.5-pro-002";
+    this.fallbackModel = "gemini-2.5-flash";
 
     this.initializeGenAI();
 
@@ -159,17 +159,17 @@ class LLMService {
           temperature: modelName === this.primaryModel ? 0.3 : 0.4,
           topP: 0.8,
           topK: 40,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 8192,
         };
 
         // Configure thinking for 2.5 series models (they require thinking mode)
         if (modelName.includes("2.5")) {
           // Use moderate thinking budget for structured geographic responses
           config.thinkingConfig = {
-            thinkingBudget: 1024, // Use 1024 tokens for thinking (moderate amount)
+            thinkingBudget: -1, // Dynamic thinking - let model decide
           };
           console.log(
-            `🧠 Using thinking mode with 1024 token budget for ${modelName}`
+            `🧠 Using DYNAMIC thinking mode for ${modelName} (workaround for API bug)`
           );
         } else {
           // For non-2.5 models, don't include thinking config

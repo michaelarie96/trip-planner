@@ -2,21 +2,40 @@ const axios = require("axios");
 
 class GeocodingService {
   constructor() {
-    // OpenStreetMap Nominatim API - free, no API key required
+    // Google Geocoding API configuration (primary)
+    this.googleApiKey = process.env.GOOGLE_GEOCODING_API_KEY;
+    this.googleBaseUrl = "https://maps.googleapis.com/maps/api/geocode/json";
+
+    // OpenStreetMap Nominatim API (fallback)
     this.nominatimBaseUrl = "https://nominatim.openstreetmap.org";
 
-    // Request headers to identify our application (required by Nominatim)
-    this.headers = {
+    // Request headers for Nominatim (required by Nominatim)
+    this.nominatimHeaders = {
       "User-Agent": "TripPlanner-App/1.0 (contact@example.com)",
       Accept: "application/json",
     };
 
     // Cache for geocoding results to avoid repeated API calls
     this.geocodeCache = new Map();
+
+    // API usage tracking
+    this.googleRequestCount = 0;
+    this.nominatimRequestCount = 0;
+    this.cacheHits = 0;
+
+    if (!this.googleApiKey) {
+      console.warn(
+        "Google Geocoding API key not found - will use Nominatim only"
+      );
+    } else {
+      console.log(
+        "✓ Google Geocoding API initialized as primary geocoding service"
+      );
+    }
   }
 
   /**
-   * Geocode a location (city, country) to get coordinates
+   * Geocode a location using Google API first, then Nominatim fallback
    * @param {string} location - Location string like "Paris, France" or "France"
    * @returns {Object} Coordinates and location info
    */
@@ -25,12 +44,151 @@ class GeocodingService {
       // Check cache first
       const cacheKey = location.toLowerCase().trim();
       if (this.geocodeCache.has(cacheKey)) {
-        console.log(`Using cached geocode for: ${location}`);
+        console.log(`🎯 Cache hit for: ${location}`);
+        this.cacheHits++;
         return this.geocodeCache.get(cacheKey);
       }
 
-      console.log(`Geocoding location: ${location}`);
+      console.log(`🔍 Geocoding location: ${location}`);
 
+      let locationData = null;
+      let method = "unknown";
+
+      // Try Google Geocoding API first
+      if (this.googleApiKey) {
+        try {
+          console.log(`📍 Attempting Google Geocoding for: ${location}`);
+          locationData = await this.geocodeWithGoogle(location);
+          method = "google";
+          console.log(`✅ Google Geocoding successful for: ${location}`);
+        } catch (googleError) {
+          console.warn(
+            `⚠️ Google Geocoding failed for "${location}": ${googleError.message}`
+          );
+
+          // Check if it's a quota/billing issue vs location not found
+          if (
+            googleError.message.includes("OVER_QUERY_LIMIT") ||
+            googleError.message.includes("REQUEST_DENIED")
+          ) {
+            console.warn(
+              "🚨 Google API quota/billing issue - switching to Nominatim"
+            );
+          }
+        }
+      }
+
+      // Fallback to Nominatim if Google failed or not available
+      if (!locationData) {
+        try {
+          console.log(`🗺️ Falling back to Nominatim for: ${location}`);
+          locationData = await this.geocodeWithNominatim(location);
+          method = "nominatim";
+          console.log(`✅ Nominatim geocoding successful for: ${location}`);
+        } catch (nominatimError) {
+          console.error(
+            `❌ Nominatim also failed for "${location}": ${nominatimError.message}`
+          );
+          throw new Error(`All geocoding services failed for "${location}"`);
+        }
+      }
+
+      // Add metadata
+      locationData.geocodingMethod = method;
+      locationData.cachedAt = new Date().toISOString();
+
+      // Cache the result
+      this.geocodeCache.set(cacheKey, locationData);
+
+      console.log(
+        `📍 Geocoded "${location}" via ${method}:`,
+        locationData.coordinates
+      );
+      return locationData;
+    } catch (error) {
+      console.error(`Geocoding error for "${location}":`, error.message);
+      throw new Error(`Failed to geocode location: ${error.message}`);
+    }
+  }
+
+  /**
+   * Geocode using Google Geocoding API
+   * @param {string} location - Location to geocode
+   * @returns {Object} Geocoding result
+   */
+  async geocodeWithGoogle(location) {
+    try {
+      const response = await axios.get(this.googleBaseUrl, {
+        params: {
+          address: location,
+          key: this.googleApiKey,
+          language: "en", // Request English responses
+          region: "us", // Bias towards US region for better international results
+        },
+        timeout: 10000, // 10 second timeout
+        headers: {
+          "User-Agent": "TripPlanner-App/1.0",
+        },
+      });
+
+      this.googleRequestCount++;
+      console.log(`📊 Google API request ${this.googleRequestCount} completed`);
+
+      // Check API response status
+      if (response.data.status !== "OK") {
+        const errorMessage = this.handleGoogleError(
+          response.data.status,
+          response.data.error_message
+        );
+        throw new Error(errorMessage);
+      }
+
+      if (!response.data.results || response.data.results.length === 0) {
+        throw new Error(
+          `No results found for "${location}" in Google Geocoding`
+        );
+      }
+
+      // Process Google's response format
+      const result = response.data.results[0];
+      const geometry = result.geometry;
+      const coordinates = [geometry.location.lat, geometry.location.lng];
+
+      return {
+        coordinates,
+        displayName: result.formatted_address,
+        address: this.parseGoogleAddressComponents(result.address_components),
+        boundingBox: geometry.viewport
+          ? [
+              geometry.viewport.southwest.lat,
+              geometry.viewport.southwest.lng,
+              geometry.viewport.northeast.lat,
+              geometry.viewport.northeast.lng,
+            ]
+          : null,
+        type: result.types[0] || "unknown",
+        placeId: result.place_id,
+        importance: this.calculateImportanceFromTypes(result.types),
+        source: "Google Geocoding API",
+        accuracy: geometry.location_type || "APPROXIMATE",
+      };
+    } catch (error) {
+      if (error.response) {
+        throw new Error(
+          `Google API error: ${error.response.status} - ${error.response.statusText}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Geocode using Nominatim (OpenStreetMap) as fallback
+   * @param {string} location - Location to geocode
+   * @returns {Object} Geocoding result
+   */
+  async geocodeWithNominatim(location) {
+    try {
       const response = await axios.get(`${this.nominatimBaseUrl}/search`, {
         params: {
           q: location,
@@ -39,35 +197,120 @@ class GeocodingService {
           addressdetails: 1,
           extratags: 1,
         },
-        headers: this.headers,
+        headers: this.nominatimHeaders,
         timeout: 10000,
       });
 
+      this.nominatimRequestCount++;
+      console.log(
+        `📊 Nominatim request ${this.nominatimRequestCount} completed`
+      );
+
       if (!response.data || response.data.length === 0) {
-        throw new Error(`Location "${location}" not found`);
+        throw new Error(`No results found for "${location}" in Nominatim`);
       }
 
       const result = response.data[0];
       const coordinates = [parseFloat(result.lat), parseFloat(result.lon)];
 
-      const locationData = {
+      return {
         coordinates,
         displayName: result.display_name,
         address: result.address || {},
         boundingBox: result.boundingbox ? result.boundingbox.map(Number) : null,
         type: result.type,
-        importance: result.importance,
+        importance: result.importance || 0.5,
+        source: "Nominatim (OpenStreetMap)",
+        accuracy: "APPROXIMATE",
       };
-
-      // Cache the result
-      this.geocodeCache.set(cacheKey, locationData);
-
-      console.log(`Geocoded "${location}" to:`, coordinates);
-      return locationData;
     } catch (error) {
-      console.error(`Geocoding error for "${location}":`, error.message);
-      throw new Error(`Failed to geocode location: ${error.message}`);
+      if (error.response) {
+        throw new Error(
+          `Nominatim API error: ${error.response.status} - ${error.response.statusText}`
+        );
+      }
+      throw error;
     }
+  }
+
+  /**
+   * Handle Google Geocoding API error statuses
+   * @param {string} status - Google API status code
+   * @param {string} errorMessage - Optional error message
+   * @returns {string} Human-readable error message
+   */
+  handleGoogleError(status, errorMessage) {
+    const errorMap = {
+      ZERO_RESULTS: "Location not found in Google database",
+      OVER_QUERY_LIMIT: "Google Geocoding API quota exceeded",
+      REQUEST_DENIED: "Google Geocoding API access denied - check API key",
+      INVALID_REQUEST: "Invalid geocoding request format",
+      UNKNOWN_ERROR: "Google Geocoding API server error",
+    };
+
+    const message = errorMap[status] || `Google API error: ${status}`;
+    return errorMessage ? `${message} - ${errorMessage}` : message;
+  }
+
+  /**
+   * Parse Google's address_components into a structured format
+   * @param {Array} components - Google address components
+   * @returns {Object} Structured address data
+   */
+  parseGoogleAddressComponents(components) {
+    const address = {};
+
+    components.forEach((component) => {
+      const types = component.types;
+
+      if (types.includes("country")) {
+        address.country = component.long_name;
+        address.countryCode = component.short_name;
+      }
+      if (types.includes("administrative_area_level_1")) {
+        address.state = component.long_name;
+      }
+      if (types.includes("locality")) {
+        address.city = component.long_name;
+      }
+      if (types.includes("postal_code")) {
+        address.postalCode = component.long_name;
+      }
+      if (types.includes("route")) {
+        address.street = component.long_name;
+      }
+      if (types.includes("street_number")) {
+        address.streetNumber = component.long_name;
+      }
+    });
+
+    return address;
+  }
+
+  /**
+   * Calculate importance score from Google place types
+   * @param {Array} types - Google place types
+   * @returns {number} Importance score (0-1)
+   */
+  calculateImportanceFromTypes(types) {
+    const importanceMap = {
+      country: 1.0,
+      administrative_area_level_1: 0.9,
+      locality: 0.8,
+      tourist_attraction: 0.7,
+      point_of_interest: 0.6,
+      establishment: 0.5,
+      route: 0.4,
+    };
+
+    let maxImportance = 0.3; // Default minimum
+    types.forEach((type) => {
+      if (importanceMap[type] && importanceMap[type] > maxImportance) {
+        maxImportance = importanceMap[type];
+      }
+    });
+
+    return maxImportance;
   }
 
   /**
@@ -78,7 +321,7 @@ class GeocodingService {
    */
   async generateRouteCoordinates(waypoints, tripType = "cycling") {
     try {
-      console.log("Generating route coordinates for waypoints:", waypoints);
+      console.log("🗺️ Generating route coordinates for waypoints:", waypoints);
 
       // Geocode all waypoints to get their coordinates
       const geocodedPoints = [];
@@ -88,12 +331,13 @@ class GeocodingService {
           geocodedPoints.push({
             name: waypoint,
             coordinates: locationData.coordinates,
+            geocodingMethod: locationData.geocodingMethod,
             displayName: locationData.displayName,
+            accuracy: locationData.accuracy,
           });
         } catch (error) {
           console.warn(
-            `Failed to geocode waypoint "${waypoint}":`,
-            error.message
+            `⚠️ Failed to geocode waypoint "${waypoint}": ${error.message}`
           );
           // Skip this waypoint if geocoding fails
         }
@@ -102,6 +346,10 @@ class GeocodingService {
       if (geocodedPoints.length === 0) {
         throw new Error("No waypoints could be geocoded");
       }
+
+      console.log(
+        `✅ Successfully geocoded ${geocodedPoints.length}/${waypoints.length} waypoints`
+      );
 
       // Generate route coordinates based on trip type
       if (tripType === "cycling") {
@@ -144,7 +392,7 @@ class GeocodingService {
     }
 
     console.log(
-      `Generated cycling route with ${allCoordinates.length} coordinates`
+      `🚴 Generated cycling route with ${allCoordinates.length} coordinates`
     );
     return allCoordinates;
   }
@@ -191,7 +439,7 @@ class GeocodingService {
     }
 
     console.log(
-      `Generated trekking route with ${allCoordinates.length} coordinates`
+      `🥾 Generated trekking route with ${allCoordinates.length} coordinates`
     );
     return allCoordinates;
   }
@@ -401,6 +649,40 @@ class GeocodingService {
     try {
       const [lat, lng] = coordinates;
 
+      // Try Google reverse geocoding first
+      if (this.googleApiKey) {
+        try {
+          const response = await axios.get(this.googleBaseUrl, {
+            params: {
+              latlng: `${lat},${lng}`,
+              key: this.googleApiKey,
+              language: "en",
+            },
+            timeout: 8000,
+          });
+
+          this.googleRequestCount++;
+
+          if (
+            response.data.status === "OK" &&
+            response.data.results.length > 0
+          ) {
+            const result = response.data.results[0];
+            return {
+              displayName: result.formatted_address,
+              address: this.parseGoogleAddressComponents(
+                result.address_components
+              ),
+              type: result.types[0] || "unknown",
+              source: "Google Geocoding API",
+            };
+          }
+        } catch (error) {
+          console.warn("Google reverse geocoding failed:", error.message);
+        }
+      }
+
+      // Fallback to Nominatim
       const response = await axios.get(`${this.nominatimBaseUrl}/reverse`, {
         params: {
           lat: lat,
@@ -408,9 +690,11 @@ class GeocodingService {
           format: "json",
           addressdetails: 1,
         },
-        headers: this.headers,
+        headers: this.nominatimHeaders,
         timeout: 8000,
       });
+
+      this.nominatimRequestCount++;
 
       if (!response.data) {
         throw new Error("No location found for coordinates");
@@ -420,6 +704,7 @@ class GeocodingService {
         displayName: response.data.display_name,
         address: response.data.address || {},
         type: response.data.type,
+        source: "Nominatim (OpenStreetMap)",
       };
     } catch (error) {
       console.error("Reverse geocoding error:", error.message);
@@ -432,17 +717,70 @@ class GeocodingService {
    */
   clearCache() {
     this.geocodeCache.clear();
-    console.log("Geocoding cache cleared");
+    console.log("🗑️ Geocoding cache cleared");
   }
 
   /**
-   * Get cache statistics
-   * @returns {Object} Cache information
+   * Get comprehensive service statistics
+   * @returns {Object} Service usage and performance information
    */
-  getCacheStats() {
+  getServiceStats() {
     return {
-      size: this.geocodeCache.size,
-      keys: Array.from(this.geocodeCache.keys()),
+      cacheStats: {
+        size: this.geocodeCache.size,
+        hits: this.cacheHits,
+        keys: Array.from(this.geocodeCache.keys()),
+      },
+      apiUsage: {
+        google: {
+          requests: this.googleRequestCount,
+          available: !!this.googleApiKey,
+          primary: true,
+        },
+        nominatim: {
+          requests: this.nominatimRequestCount,
+          available: true,
+          fallback: true,
+        },
+      },
+      performance: {
+        totalRequests: this.googleRequestCount + this.nominatimRequestCount,
+        cacheHitRate:
+          this.cacheHits /
+          Math.max(
+            1,
+            this.googleRequestCount +
+              this.nominatimRequestCount +
+              this.cacheHits
+          ),
+        fallbackRate:
+          this.nominatimRequestCount /
+          Math.max(1, this.googleRequestCount + this.nominatimRequestCount),
+      },
+    };
+  }
+
+  /**
+   * Check if geocoding services are available and properly configured
+   * @returns {Object} Service availability status
+   */
+  getServiceHealth() {
+    return {
+      google: {
+        available: !!this.googleApiKey,
+        configured: !!this.googleApiKey,
+        status: this.googleApiKey ? "ready" : "api_key_missing",
+      },
+      nominatim: {
+        available: true,
+        configured: true,
+        status: "ready",
+      },
+      fallbackChain: [
+        this.googleApiKey ? "Google Geocoding API" : null,
+        "Nominatim (OpenStreetMap)",
+        "Mock coordinates",
+      ].filter(Boolean),
     };
   }
 }
