@@ -17,7 +17,7 @@ import { routesAPI } from "../../services/api";
 
 /**
  * RouteDisplay Component
- * 
+ *
  * Displays generated route information including:
  * - Route summary (distance, duration, difficulty)
  * - Daily route breakdown with waypoints
@@ -118,7 +118,8 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
             </summary>
             <div className="text-xs text-gray-600 space-y-2">
               <div>
-                <strong>RouteData keys:</strong> {Object.keys(routeData).join(', ')}
+                <strong>RouteData keys:</strong>{" "}
+                {Object.keys(routeData).join(", ")}
               </div>
               <div>
                 <strong>RouteData structure:</strong>
@@ -183,11 +184,6 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
       return;
     }
 
-    if (!saveFormData.description.trim()) {
-      setSaveError("Route description is required");
-      return;
-    }
-
     setSaySaving(true);
     setSaveError("");
 
@@ -231,7 +227,8 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
     } catch (error) {
       console.error("Save route error:", error);
       const errorMessage =
-        error.response?.data?.message || "Failed to save route. Please try again.";
+        error.response?.data?.message ||
+        "Failed to save route. Please try again.";
       setSaveError(errorMessage);
     } finally {
       setSaySaving(false);
@@ -248,9 +245,12 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
   // Safely get route statistics with fallbacks
   const getRouteStats = () => {
     const totalDistance = route.totalDistance || 0;
-    const estimatedDuration = route.estimatedDuration || (formData.tripType === 'cycling' ? '2 days' : '1 day');
-    const dayCount = route.dailyRoutes?.length || (formData.tripType === 'cycling' ? 2 : 1);
-    
+    const estimatedDuration =
+      route.estimatedDuration ||
+      (formData.tripType === "cycling" ? "2 days" : "1 day");
+    const dayCount =
+      route.dailyRoutes?.length || (formData.tripType === "cycling" ? 2 : 1);
+
     return { totalDistance, estimatedDuration, dayCount };
   };
 
@@ -264,16 +264,22 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
           {/* Route Summary */}
           <div className="lg:col-span-2">
             <div className="flex items-center space-x-3 mb-4">
-              <div className={`w-10 h-10 ${styles.bg} rounded-lg flex items-center justify-center`}>
+              <div
+                className={`w-10 h-10 ${styles.bg} rounded-lg flex items-center justify-center`}
+              >
                 <TripIcon className={`h-5 w-5 ${styles.primary}`} />
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-gray-900">
-                  {formData.city ? `${formData.city}, ${formData.country}` : formData.country} Route
+                  {formData.city
+                    ? `${formData.city}, ${formData.country}`
+                    : formData.country}{" "}
+                  Route
                 </h2>
                 <div className="flex items-center space-x-2 mt-1">
                   <span className={styles.badge}>
-                    {formData.tripType.charAt(0).toUpperCase() + formData.tripType.slice(1)}
+                    {formData.tripType.charAt(0).toUpperCase() +
+                      formData.tripType.slice(1)}
                   </span>
                   {route.difficulty && (
                     <span className="badge-neutral">{route.difficulty}</span>
@@ -327,8 +333,8 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                   alt={imageData.description || `${formData.country} landscape`}
                   className="w-full h-48 object-cover rounded-lg"
                   onError={(e) => {
-                    e.target.style.display = 'none';
-                    e.target.nextSibling.style.display = 'flex';
+                    e.target.style.display = "none";
+                    e.target.nextSibling.style.display = "flex";
                   }}
                 />
                 <div className="hidden w-full h-48 bg-gray-100 rounded-lg items-center justify-center">
@@ -382,11 +388,15 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-3">
                   <div>
                     <p className="text-sm text-gray-600 mb-1">Start:</p>
-                    <p className="font-medium text-gray-900">{day.startPoint || "Not specified"}</p>
+                    <p className="font-medium text-gray-900">
+                      {day.startPoint || "Not specified"}
+                    </p>
                   </div>
                   <div>
                     <p className="text-sm text-gray-600 mb-1">End:</p>
-                    <p className="font-medium text-gray-900">{day.endPoint || "Not specified"}</p>
+                    <p className="font-medium text-gray-900">
+                      {day.endPoint || "Not specified"}
+                    </p>
                   </div>
                 </div>
 
@@ -412,21 +422,37 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
             // Fallback display with debug information
             <div className="text-center py-8">
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
-                <h4 className="font-medium text-yellow-800 mb-2">⚠️ Missing Daily Route Data</h4>
+                <h4 className="font-medium text-yellow-800 mb-2">
+                  ⚠️ Missing Daily Route Data
+                </h4>
                 <div className="text-left text-sm text-yellow-700 space-y-1">
-                  <p><strong>Expected:</strong> route.dailyRoutes array with day objects</p>
-                  <p><strong>Found:</strong> {route.dailyRoutes ? `${route.dailyRoutes.length} items` : 'undefined or empty'}</p>
-                  <p><strong>Route Keys:</strong> {Object.keys(route).join(', ')}</p>
+                  <p>
+                    <strong>Expected:</strong> route.dailyRoutes array with day
+                    objects
+                  </p>
+                  <p>
+                    <strong>Found:</strong>{" "}
+                    {route.dailyRoutes
+                      ? `${route.dailyRoutes.length} items`
+                      : "undefined or empty"}
+                  </p>
+                  <p>
+                    <strong>Route Keys:</strong> {Object.keys(route).join(", ")}
+                  </p>
                 </div>
               </div>
-              
+
               {/* Try to show some route info if available */}
               {route.coordinates && route.coordinates.length > 0 && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                  <h4 className="font-medium text-blue-800 mb-2">Available Route Data</h4>
+                  <h4 className="font-medium text-blue-800 mb-2">
+                    Available Route Data
+                  </h4>
                   <div className="text-sm text-blue-700 space-y-1">
                     <p>📍 {route.coordinates.length} coordinate points</p>
-                    {route.waypoints && <p>🗺️ {route.waypoints.length} waypoints</p>}
+                    {route.waypoints && (
+                      <p>🗺️ {route.waypoints.length} waypoints</p>
+                    )}
                     <p>📏 Total distance: {totalDistance}km</p>
                     <p>⏱️ Duration: {estimatedDuration}</p>
                   </div>
@@ -466,7 +492,8 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
               Save This Route
             </h3>
             <p className="text-gray-600 text-sm mb-4">
-              Save this route to your account to access it later and get weather updates.
+              Save this route to your account to access it later and get weather
+              updates.
             </p>
             <button
               onClick={() => setShowSaveForm(true)}
@@ -518,12 +545,12 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                   htmlFor="routeDescription"
                   className="block text-sm font-medium text-gray-700 mb-2"
                 >
-                  Description *
+                  Description{" "}
+                  <span className="text-gray-500 text-xs">(optional)</span>
                 </label>
                 <textarea
                   id="routeDescription"
                   name="description"
-                  required
                   rows={3}
                   value={saveFormData.description}
                   onChange={handleSaveInputChange}
@@ -538,7 +565,9 @@ const RouteDisplay = ({ routeData, formData, onRouteSaved }) => {
                   type="submit"
                   disabled={isSaving}
                   className={`flex-1 flex justify-center items-center space-x-2 ${
-                    formData.tripType === "cycling" ? "btn-cycling" : "btn-trekking"
+                    formData.tripType === "cycling"
+                      ? "btn-cycling"
+                      : "btn-trekking"
                   } ${isSaving ? "opacity-60 cursor-not-allowed" : ""}`}
                 >
                   {isSaving && <Loader2 className="h-4 w-4 animate-spin" />}

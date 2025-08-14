@@ -85,10 +85,10 @@ router.post("/save", async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!name || !description || !country || !tripType || !routeData) {
+    if (!name || !country || !tripType || !routeData) {
       return res.status(400).json({
         message: "Missing required fields",
-        required: ["name", "description", "country", "tripType", "routeData"],
+        required: ["name", "country", "tripType", "routeData"],
       });
     }
 

@@ -13,19 +13,19 @@ const routeSchema = new mongoose.Schema(
     },
     description: {
       type: String,
-      required: [true, "Route description is required"],
+      required: false, // Make description optional
       trim: true,
-      minlength: [5, "Description must be at least 5 characters"],
       maxlength: [500, "Description cannot exceed 500 characters"],
+      default: "", // Provide default empty string
     },
-    
+
     // User association - references User model
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "User ID is required"],
     },
-    
+
     // Location information
     country: {
       type: String,
@@ -40,7 +40,7 @@ const routeSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
-    
+
     // Trip type - cycling or trekking
     tripType: {
       type: String,
@@ -50,7 +50,7 @@ const routeSchema = new mongoose.Schema(
         message: "Trip type must be either cycling or trekking",
       },
     },
-    
+
     // Route data from LLM generation
     routeData: {
       // Array of coordinate pairs [latitude, longitude]
@@ -58,20 +58,20 @@ const routeSchema = new mongoose.Schema(
         type: [[Number]], // Array of [lat, lng] pairs
         required: [true, "Route coordinates are required"],
         validate: {
-          validator: function(coordinates) {
+          validator: function (coordinates) {
             // Ensure we have at least 2 points for a route
             return coordinates && coordinates.length >= 2;
           },
           message: "Route must have at least 2 coordinate points",
         },
       },
-      
+
       // Waypoints/landmarks along the route
       waypoints: {
         type: [String],
         default: [],
       },
-      
+
       // Daily route breakdown
       dailyRoutes: [
         {
@@ -94,7 +94,7 @@ const routeSchema = new mongoose.Schema(
           },
           coordinates: {
             type: [[Number]], // Coordinates for this specific day
-            required: true,
+            default: [], // Make coordinates optional for daily routes
           },
           waypoints: {
             type: [String],
@@ -102,19 +102,19 @@ const routeSchema = new mongoose.Schema(
           },
         },
       ],
-      
+
       // Total route statistics
       totalDistance: {
         type: Number,
         required: [true, "Total distance is required"],
         min: [0, "Total distance cannot be negative"],
       },
-      
+
       estimatedDuration: {
         type: String, // e.g., "2 days", "1 day"
         required: [true, "Estimated duration is required"],
       },
-      
+
       // Difficulty level (optional, can be added by LLM)
       difficulty: {
         type: String,
@@ -122,12 +122,12 @@ const routeSchema = new mongoose.Schema(
         default: "moderate",
       },
     },
-    
+
     // Image URL from Unsplash API
     imageUrl: {
       type: String,
       validate: {
-        validator: function(url) {
+        validator: function (url) {
           if (!url) return true; // Allow empty URLs
           // Basic URL validation
           return /^https?:\/\/.+/.test(url);
@@ -135,7 +135,7 @@ const routeSchema = new mongoose.Schema(
         message: "Image URL must be a valid HTTP/HTTPS URL",
       },
     },
-    
+
     // LLM generation metadata (for debugging and improvement)
     generationData: {
       llmModel: {
@@ -152,7 +152,7 @@ const routeSchema = new mongoose.Schema(
         type: Number, // Time taken to generate in milliseconds
       },
     },
-    
+
     // Weather data is NOT stored (fetched real-time as per requirements)
     // But we store the starting location for weather fetching
     weatherLocation: {
@@ -160,13 +160,18 @@ const routeSchema = new mongoose.Schema(
         type: [Number], // [latitude, longitude] for weather API
         required: false, // Can be calculated from route coordinates
         validate: {
-          validator: function(coords) {
+          validator: function (coords) {
             if (!coords || coords.length === 0) return true; // Allow empty
-            return coords.length === 2 && 
-                   coords[0] >= -90 && coords[0] <= 90 && // latitude
-                   coords[1] >= -180 && coords[1] <= 180; // longitude
+            return (
+              coords.length === 2 &&
+              coords[0] >= -90 &&
+              coords[0] <= 90 && // latitude
+              coords[1] >= -180 &&
+              coords[1] <= 180
+            ); // longitude
           },
-          message: "Weather coordinates must be [latitude, longitude] within valid ranges",
+          message:
+            "Weather coordinates must be [latitude, longitude] within valid ranges",
         },
       },
       locationName: {
@@ -185,7 +190,7 @@ routeSchema.index({ country: 1, tripType: 1 }); // Routes by country and type
 routeSchema.index({ "routeData.totalDistance": 1 }); // Routes by distance
 
 // Instance method to get route summary
-routeSchema.methods.getSummary = function() {
+routeSchema.methods.getSummary = function () {
   return {
     id: this._id,
     name: this.name,
@@ -201,11 +206,11 @@ routeSchema.methods.getSummary = function() {
 };
 
 // Instance method to get coordinates for map display
-routeSchema.methods.getMapData = function() {
+routeSchema.methods.getMapData = function () {
   return {
     coordinates: this.routeData.coordinates,
     waypoints: this.routeData.waypoints,
-    dailyRoutes: this.routeData.dailyRoutes.map(day => ({
+    dailyRoutes: this.routeData.dailyRoutes.map((day) => ({
       day: day.day,
       startPoint: day.startPoint,
       endPoint: day.endPoint,
@@ -216,7 +221,7 @@ routeSchema.methods.getMapData = function() {
 };
 
 // Static method to find routes by user
-routeSchema.statics.findByUser = function(userId, limit = 10) {
+routeSchema.statics.findByUser = function (userId, limit = 10) {
   return this.find({ userId })
     .sort({ createdAt: -1 })
     .limit(limit)
@@ -224,44 +229,65 @@ routeSchema.statics.findByUser = function(userId, limit = 10) {
 };
 
 // Static method to find routes by criteria
-routeSchema.statics.findByCriteria = function(criteria) {
+routeSchema.statics.findByCriteria = function (criteria) {
   const query = {};
-  
+
   if (criteria.country) query.country = new RegExp(criteria.country, "i");
   if (criteria.tripType) query.tripType = criteria.tripType;
-  if (criteria.minDistance) query["routeData.totalDistance"] = { $gte: criteria.minDistance };
+  if (criteria.minDistance)
+    query["routeData.totalDistance"] = { $gte: criteria.minDistance };
   if (criteria.maxDistance) {
     query["routeData.totalDistance"] = query["routeData.totalDistance"] || {};
     query["routeData.totalDistance"].$lte = criteria.maxDistance;
   }
-  
+
   return this.find(query).populate("userId", "name email");
 };
 
 // Pre-save middleware to calculate total distance and weather location if not provided
-routeSchema.pre("save", function(next) {
+routeSchema.pre("save", function (next) {
   // Calculate total distance if it's 0 or not set and we have daily routes
-  if ((!this.routeData.totalDistance || this.routeData.totalDistance === 0) && 
-      this.routeData.dailyRoutes && this.routeData.dailyRoutes.length > 0) {
+  if (
+    (!this.routeData.totalDistance || this.routeData.totalDistance === 0) &&
+    this.routeData.dailyRoutes &&
+    this.routeData.dailyRoutes.length > 0
+  ) {
     this.routeData.totalDistance = this.routeData.dailyRoutes.reduce(
       (total, day) => total + (day.distance || 0),
       0
     );
   }
-  
+
   // Set weather location from first coordinate if not provided
-  if ((!this.weatherLocation || !this.weatherLocation.coordinates || this.weatherLocation.coordinates.length === 0) &&
-      this.routeData.coordinates && this.routeData.coordinates.length > 0) {
+  if (
+    (!this.weatherLocation ||
+      !this.weatherLocation.coordinates ||
+      this.weatherLocation.coordinates.length === 0) &&
+    this.routeData.coordinates &&
+    this.routeData.coordinates.length > 0
+  ) {
     // Initialize weatherLocation if it doesn't exist
     if (!this.weatherLocation) {
       this.weatherLocation = {};
     }
     this.weatherLocation.coordinates = this.routeData.coordinates[0];
     if (!this.weatherLocation.locationName && (this.city || this.country)) {
-      this.weatherLocation.locationName = this.city ? `${this.city}, ${this.country}` : this.country;
+      this.weatherLocation.locationName = this.city
+        ? `${this.city}, ${this.country}`
+        : this.country;
     }
   }
-  
+
+  // Auto-generate description if empty
+  if (!this.description || this.description.trim() === "") {
+    const location = this.city ? `${this.city}, ${this.country}` : this.country;
+    const tripTypeLabel =
+      this.tripType.charAt(0).toUpperCase() + this.tripType.slice(1);
+    this.description = `${tripTypeLabel} route in ${location} - ${
+      this.routeData.totalDistance || 0
+    }km`;
+  }
+
   next();
 });
 
