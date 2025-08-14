@@ -35,7 +35,7 @@ class GeocodingService {
   }
 
   /**
-   * Geocode a location using Google API first, then Nominatim fallback
+   * Geocode a location using Google Places API first, then Geocoding API, then Nominatim fallback
    * @param {string} location - Location string like "Paris, France" or "France"
    * @returns {Object} Coordinates and location info
    */
@@ -54,31 +54,47 @@ class GeocodingService {
       let locationData = null;
       let method = "unknown";
 
-      // Try Google Geocoding API first
+      // Try Google Places API first (best for landmarks and POIs)
       if (this.googleApiKey) {
         try {
-          console.log(`📍 Attempting Google Geocoding for: ${location}`);
-          locationData = await this.geocodeWithGoogle(location);
-          method = "google";
-          console.log(`✅ Google Geocoding successful for: ${location}`);
-        } catch (googleError) {
+          console.log(`📍 Attempting Google Places API for: ${location}`);
+          locationData = await this.geocodeWithGooglePlaces(location);
+          method = "google_places";
+          console.log(`✅ Google Places API successful for: ${location}`);
+        } catch (placesError) {
           console.warn(
-            `⚠️ Google Geocoding failed for "${location}": ${googleError.message}`
+            `⚠️ Google Places API failed for "${location}": ${placesError.message}`
           );
 
-          // Check if it's a quota/billing issue vs location not found
-          if (
-            googleError.message.includes("OVER_QUERY_LIMIT") ||
-            googleError.message.includes("REQUEST_DENIED")
-          ) {
-            console.warn(
-              "🚨 Google API quota/billing issue - switching to Nominatim"
+          // Try Google Geocoding API as backup
+          try {
+            console.log(
+              `📍 Falling back to Google Geocoding API for: ${location}`
             );
+            locationData = await this.geocodeWithGoogle(location);
+            method = "google_geocoding";
+            console.log(`✅ Google Geocoding API successful for: ${location}`);
+          } catch (geocodingError) {
+            console.warn(
+              `⚠️ Google Geocoding API also failed for "${location}": ${geocodingError.message}`
+            );
+
+            // Check if it's a quota/billing issue
+            if (
+              placesError.message.includes("OVER_QUERY_LIMIT") ||
+              placesError.message.includes("REQUEST_DENIED") ||
+              geocodingError.message.includes("OVER_QUERY_LIMIT") ||
+              geocodingError.message.includes("REQUEST_DENIED")
+            ) {
+              console.warn(
+                "🚨 Google API quota/billing issue - switching to Nominatim"
+              );
+            }
           }
         }
       }
 
-      // Fallback to Nominatim if Google failed or not available
+      // Fallback to Nominatim if Google services failed or not available
       if (!locationData) {
         try {
           console.log(`🗺️ Falling back to Nominatim for: ${location}`);
@@ -109,6 +125,149 @@ class GeocodingService {
       console.error(`Geocoding error for "${location}":`, error.message);
       throw new Error(`Failed to geocode location: ${error.message}`);
     }
+  }
+
+  /**
+   * Geocode using Google Places API (better for landmarks and POIs)
+   * @param {string} location - Location to geocode
+   * @returns {Object} Geocoding result
+   */
+  async geocodeWithGooglePlaces(location) {
+    try {
+      const placesBaseUrl =
+        "https://maps.googleapis.com/maps/api/place/textsearch/json";
+
+      const response = await axios.get(placesBaseUrl, {
+        params: {
+          query: location,
+          key: this.googleApiKey,
+          language: "en",
+        },
+        timeout: 10000,
+        headers: {
+          "User-Agent": "TripPlanner-App/1.0",
+        },
+      });
+
+      this.googleRequestCount++;
+      console.log(
+        `📍 Google Places API request ${this.googleRequestCount} completed`
+      );
+
+      // Check API response status
+      if (response.data.status !== "OK") {
+        const errorMessage = this.handleGoogleError(
+          response.data.status,
+          response.data.error_message
+        );
+        throw new Error(errorMessage);
+      }
+
+      if (!response.data.results || response.data.results.length === 0) {
+        throw new Error(
+          `No places found for "${location}" in Google Places API`
+        );
+      }
+
+      // Process the first (best) result
+      const place = response.data.results[0];
+      const geometry = place.geometry;
+
+      if (!geometry || !geometry.location) {
+        throw new Error("No geometry data in Google Places result");
+      }
+
+      const coordinates = [geometry.location.lat, geometry.location.lng];
+
+      return {
+        coordinates,
+        displayName: place.formatted_address || place.name,
+        address: this.parsePlacesAddress(place),
+        boundingBox: geometry.viewport
+          ? [
+              geometry.viewport.southwest.lat,
+              geometry.viewport.southwest.lng,
+              geometry.viewport.northeast.lat,
+              geometry.viewport.northeast.lng,
+            ]
+          : null,
+        type: place.types?.[0] || "unknown",
+        placeId: place.place_id,
+        importance: this.calculatePlacesImportance(place),
+        source: "Google Places API",
+        accuracy: "GEOMETRIC_CENTER",
+        placeName: place.name,
+        rating: place.rating,
+        userRatingsTotal: place.user_ratings_total,
+      };
+    } catch (error) {
+      if (error.response) {
+        throw new Error(
+          `Google Places API error: ${error.response.status} - ${error.response.statusText}`
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Parse address information from Places API result
+   * @param {Object} place - Places API result
+   * @returns {Object} Structured address data
+   */
+  parsePlacesAddress(place) {
+    // Places API doesn't always provide address_components like Geocoding API
+    // So we'll extract what we can from the formatted_address
+    const address = {};
+
+    if (place.formatted_address) {
+      const parts = place.formatted_address.split(", ");
+      if (parts.length > 0) {
+        address.streetAddress = parts[0];
+      }
+      if (parts.length > 1) {
+        address.city = parts[parts.length - 2];
+      }
+      if (parts.length > 0) {
+        address.country = parts[parts.length - 1];
+      }
+    }
+
+    return address;
+  }
+
+  /**
+   * Calculate importance score for Places API results
+   * @param {Object} place - Places API result
+   * @returns {number} Importance score (0-1)
+   */
+  calculatePlacesImportance(place) {
+    let importance = 0.5; // Base importance
+
+    // Boost importance based on place types
+    if (place.types) {
+      const importantTypes = [
+        "tourist_attraction",
+        "park",
+        "museum",
+        "landmark",
+      ];
+      const hasImportantType = place.types.some((type) =>
+        importantTypes.includes(type)
+      );
+      if (hasImportantType) importance += 0.2;
+    }
+
+    // Boost importance based on ratings
+    if (place.rating && place.user_ratings_total) {
+      if (place.rating >= 4.0 && place.user_ratings_total >= 100) {
+        importance += 0.2;
+      } else if (place.rating >= 3.5) {
+        importance += 0.1;
+      }
+    }
+
+    return Math.min(1.0, importance);
   }
 
   /**
