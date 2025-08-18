@@ -299,32 +299,37 @@ Remember: Each day must be under 60km. Verify your distances are realistic for t
 
 Create a realistic circular trekking route in ${location} following these STRICT requirements:
 
-DISTANCE CONSTRAINTS (MUST FOLLOW):
-- Total distance: Between 5-15km only
-- Circular route (start and end at same location)
+CRITICAL CONSTRAINTS (MUST FOLLOW):
+- Total distance: Between 5-15km ONLY (be very strict about this)
+- CIRCULAR route: MUST start and end at EXACTLY the same location
 - Walking/hiking pace, not cycling
-- Achievable in one day (4-8 hours maximum)
+- Achievable in one day (3-6 hours maximum)
 
 ROUTE REQUIREMENTS:
-- Start and end at the exact same point (circular route)
+- Start point name MUST EXACTLY MATCH end point name
 - Follow actual hiking trails, walking paths, or nature routes
-- Include real landmarks, viewpoints, or natural features
-- Use realistic hiking distances and times
+- Include 3-4 real landmarks/waypoints that create a logical circular path
+- Use realistic hiking distances and times for the terrain
 
 LOCATION SPECIFICITY:
-- Name actual trailheads, parks, or hiking areas
-- Include real natural landmarks (lakes, hills, forests)
+- Name actual trailheads, parks, or well-known hiking areas
+- Include real natural landmarks (lakes, hills, forests, viewpoints)
 - Consider local terrain and elevation
-- Mention actual trail names or hiking routes if known
+- Research actual circular hiking routes in this area if possible
+
+DISTANCE VERIFICATION:
+- Double-check that your distance is between 5-15km
+- Consider that hiking is slower than road distance
+- Account for elevation changes in your distance calculation
 
 Return ONLY valid JSON in this exact format:
 {
   "route": {
     "day1": {
-      "start": "Real Trailhead/Starting Point Name",
-      "end": "Same Trailhead/Starting Point Name",
+      "start": "Exact Same Trailhead Name",
+      "end": "Exact Same Trailhead Name", 
       "distance": 8,
-      "waypoints": ["Real Landmark 1", "Real Viewpoint/Summit", "Real Natural Feature", "Real Trail Junction"]
+      "waypoints": ["Real Landmark 1", "Real Viewpoint", "Real Natural Feature", "Real Trail Junction"]
     },
     "totalDistance": 8,
     "estimatedDuration": "1 day",
@@ -332,7 +337,11 @@ Return ONLY valid JSON in this exact format:
   }
 }
 
-Remember: Distance must be 5-15km total. Route must be circular (same start/end). Verify locations exist.`;
+REMEMBER: 
+1. Distance MUST be 5-15km (verify this twice)
+2. Start and end names must be IDENTICAL 
+3. Route must be physically possible as a circle
+4. All locations must be real places that exist`;
     }
   }
 
@@ -490,209 +499,217 @@ Remember: Distance must be 5-15km total. Route must be circular (same start/end)
     console.log("✓ Gemini route data validation passed");
   }
 
-/**
- * Generate real route coordinates using geocoding + routing services
- * @param {Array} waypointNames - Array of location names from LLM
- * @param {string} tripType - 'cycling' or 'trekking'
- * @param {Object} llmRoute - Original route data from LLM 
- * @returns {Object} Coordinates and routing metadata
- */
-async generateRealRouteCoordinates(waypointNames, tripType, llmRoute) {
-  let routingMethod = "unknown";
-  let routingError = null;
-
-  try {
-    console.log("Step 1: Geocoding waypoint names to coordinates...");
-
-    // Step 1: Geocode waypoint names to coordinates
-    const geocodedWaypoints = [];
-    for (const waypointName of waypointNames) {
-      try {
-        const locationData = await geocodingService.geocodeLocation(
-          waypointName
-        );
-        geocodedWaypoints.push({
-          name: waypointName,
-          coordinates: locationData.coordinates,
-          geocodingData: locationData,
-        });
-        console.log(
-          `✓ Geocoded: ${waypointName} → ${locationData.coordinates}`
-        );
-      } catch (error) {
-        console.warn(
-          `✗ Failed to geocode: ${waypointName} - ${error.message}`
-        );
-        // Skip waypoints that can't be geocoded
-      }
-    }
-
-    if (geocodedWaypoints.length < 2) {
-      throw new Error(
-        `Insufficient geocoded waypoints: ${geocodedWaypoints.length}/2 minimum required`
-      );
-    }
-
-    console.log(`Step 2: Using routing service for ${tripType} route...`);
-
-    // Step 2: Use routing service to get real road/trail coordinates
-    const waypointCoordinates = geocodedWaypoints.map((wp) => wp.coordinates);
-
-    let routingResult;
-
-    if (tripType === "trekking" && waypointCoordinates.length === 1) {
-      // For single-point trekking, create circular route
-      const distance = llmRoute.day1?.distance || 10; // Default 10km
-      routingResult = await routingService.getCircularRoute(
-        waypointCoordinates[0],
-        distance
-      );
-      routingMethod = "circular_routing";
-    } else {
-      // For multi-point routes (cycling or multi-waypoint trekking)
-      routingResult = await routingService.getRouteCoordinates(
-        waypointCoordinates,
-        tripType
-      );
-      routingMethod = "point_to_point_routing";
-    }
-
-    console.log(
-      `✓ Routing successful: ${routingResult.coordinates.length} coordinates generated`
-    );
-
-    // CRITICAL FIX: Calculate total distance from LLM data, not routing service
-    const llmTotalDistance = this.calculateTotalDistanceFromLLM(llmRoute);
-    console.log(`📏 LLM total distance: ${llmTotalDistance}km (authoritative)`);
-    console.log(`📏 Routing service distance: ${routingResult.distance}km (reference only)`);
-
-    return {
-      coordinates: routingResult.coordinates,
-      // USE LLM DISTANCE AS AUTHORITATIVE SOURCE
-      totalDistance: llmTotalDistance, 
-      estimatedDuration: this.formatDuration(
-        routingResult.duration,
-        tripType
-      ),
-      difficulty: routingResult.difficulty,
-      metadata: {
-        method: routingMethod,
-        geocodedWaypoints: geocodedWaypoints.length,
-        routingSource: routingResult.source,
-        routingProfile: routingResult.profile,
-        // Store routing service distance for reference/debugging
-        routingServiceDistance: routingResult.distance,
-        llmDistance: llmTotalDistance,
-        distanceSource: "llm_authoritative",
-        error: null,
-      },
-    };
-  } catch (error) {
-    console.error(`Routing failed (${routingMethod}):`, error.message);
-    routingError = error.message;
-
-    // Fallback to geocoding-only coordinates
-    console.log("Falling back to geocoding-based coordinate generation...");
+  /**
+   * Generate real route coordinates using geocoding + routing services
+   * @param {Array} waypointNames - Array of location names from LLM
+   * @param {string} tripType - 'cycling' or 'trekking'
+   * @param {Object} llmRoute - Original route data from LLM
+   * @returns {Object} Coordinates and routing metadata
+   */
+  async generateRealRouteCoordinates(waypointNames, tripType, llmRoute) {
+    let routingMethod = "unknown";
+    let routingError = null;
 
     try {
-      const fallbackCoordinates =
-        await geocodingService.generateRouteCoordinates(
-          waypointNames,
+      console.log("Step 1: Geocoding waypoint names to coordinates...");
+
+      // Step 1: Geocode waypoint names to coordinates
+      const geocodedWaypoints = [];
+      for (const waypointName of waypointNames) {
+        try {
+          const locationData = await geocodingService.geocodeLocation(
+            waypointName
+          );
+          geocodedWaypoints.push({
+            name: waypointName,
+            coordinates: locationData.coordinates,
+            geocodingData: locationData,
+          });
+          console.log(
+            `✓ Geocoded: ${waypointName} → ${locationData.coordinates}`
+          );
+        } catch (error) {
+          console.warn(
+            `✗ Failed to geocode: ${waypointName} - ${error.message}`
+          );
+          // Skip waypoints that can't be geocoded
+        }
+      }
+
+      if (geocodedWaypoints.length < 2) {
+        throw new Error(
+          `Insufficient geocoded waypoints: ${geocodedWaypoints.length}/2 minimum required`
+        );
+      }
+
+      console.log(`Step 2: Using routing service for ${tripType} route...`);
+
+      // Step 2: Use routing service to get real road/trail coordinates
+      const waypointCoordinates = geocodedWaypoints.map((wp) => wp.coordinates);
+
+      let routingResult;
+
+      if (tripType === "trekking" && waypointCoordinates.length === 1) {
+        // For single-point trekking, create circular route
+        const distance = llmRoute.day1?.distance || 10; // Default 10km
+        routingResult = await routingService.getCircularRoute(
+          waypointCoordinates[0],
+          distance
+        );
+        routingMethod = "circular_routing";
+      } else {
+        // For multi-point routes (cycling or multi-waypoint trekking)
+        routingResult = await routingService.getRouteCoordinates(
+          waypointCoordinates,
           tripType
         );
-      routingMethod = "geocoding_fallback";
+        routingMethod = "point_to_point_routing";
+      }
+
       console.log(
-        `✓ Fallback successful: ${fallbackCoordinates.length} coordinates`
+        `✓ Routing successful: ${routingResult.coordinates.length} coordinates generated`
       );
 
-      // Use LLM distance even in fallback
+      // CRITICAL FIX: Calculate total distance from LLM data, not routing service
       const llmTotalDistance = this.calculateTotalDistanceFromLLM(llmRoute);
+      console.log(
+        `📏 LLM total distance: ${llmTotalDistance}km (authoritative)`
+      );
+      console.log(
+        `📏 Routing service distance: ${routingResult.distance}km (reference only)`
+      );
 
       return {
-        coordinates: fallbackCoordinates,
-        totalDistance: llmTotalDistance, // LLM distance, not calculated
-        estimatedDuration:
-          llmRoute.estimatedDuration || this.getDefaultDuration(tripType),
-        difficulty: llmRoute.difficulty || "moderate",
+        coordinates: routingResult.coordinates,
+        // USE LLM DISTANCE AS AUTHORITATIVE SOURCE
+        totalDistance: llmTotalDistance,
+        estimatedDuration: this.formatDuration(
+          routingResult.duration,
+          tripType
+        ),
+        difficulty: routingResult.difficulty,
         metadata: {
           method: routingMethod,
-          geocodedWaypoints: waypointNames.length,
-          routingSource: "geocoding_service",
-          routingProfile: "fallback",
+          geocodedWaypoints: geocodedWaypoints.length,
+          routingSource: routingResult.source,
+          routingProfile: routingResult.profile,
+          // Store routing service distance for reference/debugging
+          routingServiceDistance: routingResult.distance,
           llmDistance: llmTotalDistance,
           distanceSource: "llm_authoritative",
-          error: routingError,
+          error: null,
         },
       };
-    } catch (fallbackError) {
-      console.error("Geocoding fallback also failed:", fallbackError.message);
+    } catch (error) {
+      console.error(`Routing failed (${routingMethod}):`, error.message);
+      routingError = error.message;
 
-      // Final fallback to mock coordinates
-      console.log("Using final fallback: mock coordinates");
-      const mockCoordinates = this.generateMockCoordinates(
-        waypointNames[0] || "Unknown",
-        null,
-        llmRoute
-      );
+      // Fallback to geocoding-only coordinates
+      console.log("Falling back to geocoding-based coordinate generation...");
 
-      // Use LLM distance even in final fallback
-      const llmTotalDistance = this.calculateTotalDistanceFromLLM(llmRoute);
+      try {
+        const fallbackCoordinates =
+          await geocodingService.generateRouteCoordinates(
+            waypointNames,
+            tripType
+          );
+        routingMethod = "geocoding_fallback";
+        console.log(
+          `✓ Fallback successful: ${fallbackCoordinates.length} coordinates`
+        );
 
-      return {
-        coordinates: mockCoordinates,
-        totalDistance: llmTotalDistance, // LLM distance, not mock
-        estimatedDuration:
-          llmRoute.estimatedDuration || this.getDefaultDuration(tripType),
-        difficulty: llmRoute.difficulty || "moderate",
-        metadata: {
-          method: "mock_fallback",
-          geocodedWaypoints: 0,
-          routingSource: "mock_generator",
-          routingProfile: "fallback",
-          llmDistance: llmTotalDistance,
-          distanceSource: "llm_authoritative",
-          error: `Routing: ${routingError}, Geocoding: ${fallbackError.message}`,
-        },
-      };
+        // Use LLM distance even in fallback
+        const llmTotalDistance = this.calculateTotalDistanceFromLLM(llmRoute);
+
+        return {
+          coordinates: fallbackCoordinates,
+          totalDistance: llmTotalDistance, // LLM distance, not calculated
+          estimatedDuration:
+            llmRoute.estimatedDuration || this.getDefaultDuration(tripType),
+          difficulty: llmRoute.difficulty || "moderate",
+          metadata: {
+            method: routingMethod,
+            geocodedWaypoints: waypointNames.length,
+            routingSource: "geocoding_service",
+            routingProfile: "fallback",
+            llmDistance: llmTotalDistance,
+            distanceSource: "llm_authoritative",
+            error: routingError,
+          },
+        };
+      } catch (fallbackError) {
+        console.error("Geocoding fallback also failed:", fallbackError.message);
+
+        // Final fallback to mock coordinates
+        console.log("Using final fallback: mock coordinates");
+        const mockCoordinates = this.generateMockCoordinates(
+          waypointNames[0] || "Unknown",
+          null,
+          llmRoute
+        );
+
+        // Use LLM distance even in final fallback
+        const llmTotalDistance = this.calculateTotalDistanceFromLLM(llmRoute);
+
+        return {
+          coordinates: mockCoordinates,
+          totalDistance: llmTotalDistance, // LLM distance, not mock
+          estimatedDuration:
+            llmRoute.estimatedDuration || this.getDefaultDuration(tripType),
+          difficulty: llmRoute.difficulty || "moderate",
+          metadata: {
+            method: "mock_fallback",
+            geocodedWaypoints: 0,
+            routingSource: "mock_generator",
+            routingProfile: "fallback",
+            llmDistance: llmTotalDistance,
+            distanceSource: "llm_authoritative",
+            error: `Routing: ${routingError}, Geocoding: ${fallbackError.message}`,
+          },
+        };
+      }
     }
   }
-}
 
-/**
- * Calculate total distance from LLM route data
- * This ensures consistency between daily distances and total
- * @param {Object} llmRoute - Original route data from LLM
- * @returns {number} Total distance in kilometers from LLM
- */
-calculateTotalDistanceFromLLM(llmRoute) {
-  let total = 0;
-  
-  // Add up all daily distances from LLM
-  if (llmRoute.day1 && typeof llmRoute.day1.distance === 'number') {
-    total += llmRoute.day1.distance;
-    console.log(`📏 Day 1 distance from LLM: ${llmRoute.day1.distance}km`);
+  /**
+   * Calculate total distance from LLM route data
+   * This ensures consistency between daily distances and total
+   * @param {Object} llmRoute - Original route data from LLM
+   * @returns {number} Total distance in kilometers from LLM
+   */
+  calculateTotalDistanceFromLLM(llmRoute) {
+    let total = 0;
+
+    // Add up all daily distances from LLM
+    if (llmRoute.day1 && typeof llmRoute.day1.distance === "number") {
+      total += llmRoute.day1.distance;
+      console.log(`📏 Day 1 distance from LLM: ${llmRoute.day1.distance}km`);
+    }
+
+    if (llmRoute.day2 && typeof llmRoute.day2.distance === "number") {
+      total += llmRoute.day2.distance;
+      console.log(`📏 Day 2 distance from LLM: ${llmRoute.day2.distance}km`);
+    }
+
+    // Fallback to totalDistance if individual days not available
+    if (
+      total === 0 &&
+      llmRoute.totalDistance &&
+      typeof llmRoute.totalDistance === "number"
+    ) {
+      total = llmRoute.totalDistance;
+      console.log(`📏 Using LLM total distance: ${total}km`);
+    }
+
+    // Final fallback for safety
+    if (total === 0) {
+      console.warn("⚠️ No distance found in LLM route, using default");
+      total = 10; // Default reasonable distance
+    }
+
+    console.log(`📏 Final LLM total distance: ${total}km`);
+    return total;
   }
-  
-  if (llmRoute.day2 && typeof llmRoute.day2.distance === 'number') {
-    total += llmRoute.day2.distance;
-    console.log(`📏 Day 2 distance from LLM: ${llmRoute.day2.distance}km`);
-  }
-  
-  // Fallback to totalDistance if individual days not available
-  if (total === 0 && llmRoute.totalDistance && typeof llmRoute.totalDistance === 'number') {
-    total = llmRoute.totalDistance;
-    console.log(`📏 Using LLM total distance: ${total}km`);
-  }
-  
-  // Final fallback for safety
-  if (total === 0) {
-    console.warn("⚠️ No distance found in LLM route, using default");
-    total = 10; // Default reasonable distance
-  }
-  
-  console.log(`📏 Final LLM total distance: ${total}km`);
-  return total;
-}
 
   /**
    * Format duration from minutes to human-readable string
@@ -882,37 +899,41 @@ calculateTotalDistanceFromLLM(llmRoute) {
     return `${cleanLocation}, ${country}`;
   }
 
-/**
- * Calculate total distance from route data
- * Now prioritizes individual daily distances over totalDistance field
- * @param {Object} route - Route data from LLM
- * @returns {number} Total distance in kilometers
- */
-calculateTotalDistance(route) {
-  let total = 0;
-  
-  // PRIORITY 1: Sum individual daily distances (most accurate)
-  if (route.day1 && typeof route.day1.distance === 'number') {
-    total += route.day1.distance;
+  /**
+   * Calculate total distance from route data
+   * Now prioritizes individual daily distances over totalDistance field
+   * @param {Object} route - Route data from LLM
+   * @returns {number} Total distance in kilometers
+   */
+  calculateTotalDistance(route) {
+    let total = 0;
+
+    // PRIORITY 1: Sum individual daily distances (most accurate)
+    if (route.day1 && typeof route.day1.distance === "number") {
+      total += route.day1.distance;
+    }
+
+    if (route.day2 && typeof route.day2.distance === "number") {
+      total += route.day2.distance;
+    }
+
+    // PRIORITY 2: Use totalDistance field if daily distances not available
+    if (
+      total === 0 &&
+      route.totalDistance &&
+      typeof route.totalDistance === "number"
+    ) {
+      total = route.totalDistance;
+    }
+
+    // PRIORITY 3: Safe fallback
+    if (total === 0) {
+      console.warn("⚠️ No distance found in route data, using default 10km");
+      total = 10;
+    }
+
+    return total;
   }
-  
-  if (route.day2 && typeof route.day2.distance === 'number') {
-    total += route.day2.distance;
-  }
-  
-  // PRIORITY 2: Use totalDistance field if daily distances not available
-  if (total === 0 && route.totalDistance && typeof route.totalDistance === 'number') {
-    total = route.totalDistance;
-  }
-  
-  // PRIORITY 3: Safe fallback
-  if (total === 0) {
-    console.warn("⚠️ No distance found in route data, using default 10km");
-    total = 10;
-  }
-  
-  return total;
-}
 
   /**
    * Get default duration for trip type
