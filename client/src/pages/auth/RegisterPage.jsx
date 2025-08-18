@@ -42,7 +42,7 @@ const RegisterPage = () => {
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
       console.log("User already authenticated, redirecting...");
-      navigate("/plan", { replace: true });
+      navigate("/", { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate]);
 
@@ -195,8 +195,10 @@ const RegisterPage = () => {
       );
 
       if (result.success) {
-        console.log("Registration successful, redirecting...");
-        navigate("/plan", { replace: true });
+        console.log("Registration successful, redirecting to home...");
+
+        // Always redirect to home page after registration
+        navigate("/", { replace: true });
       } else {
         console.error("Registration failed:", result.message);
         setServerError(

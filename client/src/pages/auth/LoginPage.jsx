@@ -24,7 +24,7 @@ const LoginPage = () => {
   useEffect(() => {
     if (isAuthenticated && !isLoading) {
       console.log("User already authenticated, redirecting...");
-      navigate("/plan", { replace: true });
+      navigate("/", { replace: true });
     }
   }, [isAuthenticated, isLoading, navigate]);
 
@@ -72,7 +72,6 @@ const LoginPage = () => {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Handle form submission
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -91,8 +90,10 @@ const LoginPage = () => {
       const result = await login(formData.email, formData.password);
 
       if (result.success) {
-        console.log("Login successful, redirecting...");
-        navigate("/plan", { replace: true });
+        console.log("Login successful, redirecting to home...");
+
+        // Always redirect to home page after login
+        navigate("/", { replace: true });
       } else {
         console.error("Login failed:", result.message);
         setServerError(result.message || "Login failed. Please try again.");
