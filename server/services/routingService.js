@@ -41,6 +41,11 @@ class RoutingService {
         `Getting route coordinates for ${tripType} with ${waypoints.length} waypoints`
       );
 
+      // Validate waypoints for trekking to avoid unrealistic routes
+      if (tripType === "trekking") {
+        this.validateTrekkingWaypoints(waypoints);
+      }
+
       // Check API key
       if (!this.apiKey) {
         throw new Error("OpenRouteService API key not configured");
@@ -128,6 +133,47 @@ class RoutingService {
 
       throw new Error(`Routing service error: ${error.message}`);
     }
+  }
+
+  /**
+   * Validate waypoints for realistic trekking routes
+   * @param {Array} waypoints - Array of [lat, lng] coordinates
+   * @throws {Error} If waypoints are too far apart for trekking
+   */
+  validateTrekkingWaypoints(waypoints) {
+    if (waypoints.length < 2) {
+      return; // Single point routes are handled separately
+    }
+
+    let totalDistance = 0;
+    const maxSegmentDistance = 8; // 8km max between any two waypoints
+    const maxTotalDistance = 20; // 20km max total (with some buffer)
+
+    for (let i = 0; i < waypoints.length - 1; i++) {
+      const segmentDistance = this.calculateDistance(waypoints[i], waypoints[i + 1]);
+      totalDistance += segmentDistance;
+
+      if (segmentDistance > maxSegmentDistance) {
+        console.warn(
+          `⚠️ Trekking waypoint validation: Segment ${i + 1} is ${segmentDistance.toFixed(
+            1
+          )}km (max ${maxSegmentDistance}km) - may cause routing failure`
+        );
+        // Don't throw error, just warn - let routing service try
+      }
+    }
+
+    if (totalDistance > maxTotalDistance) {
+      console.warn(
+        `⚠️ Trekking route validation: Total distance ${totalDistance.toFixed(
+          1
+        )}km exceeds recommended ${maxTotalDistance}km - may cause routing failure`
+      );
+    }
+
+    console.log(
+      `✓ Trekking route validation: ${waypoints.length} waypoints, ~${totalDistance.toFixed(1)}km total`
+    );
   }
 
   /**

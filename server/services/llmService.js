@@ -313,14 +313,16 @@ ROUTE REQUIREMENTS:
 
 LOCATION SPECIFICITY:
 - Name actual trailheads, parks, or well-known hiking areas
-- Include real natural landmarks (lakes, hills, forests, viewpoints)
-- Consider local terrain and elevation
-- Research actual circular hiking routes in this area if possible
+- Include real natural landmarks (lakes, hills, forests, viewpoints) 
+- CRITICAL: Waypoints must be within WALKING DISTANCE of each other (max 3-5km between each waypoint)
+- Choose waypoints that are realistically connected by hiking trails or walking paths
+- Avoid waypoints that are in completely different regions or require driving between them
 
 DISTANCE VERIFICATION:
 - Double-check that your distance is between 5-15km
 - Consider that hiking is slower than road distance
 - Account for elevation changes in your distance calculation
+- CRITICAL: Ensure waypoints form a logical walking loop, not scattered tourist destinations
 
 Return ONLY valid JSON in this exact format:
 {
@@ -549,16 +551,36 @@ REMEMBER:
 
       let routingResult;
 
-      if (tripType === "trekking" && waypointCoordinates.length === 1) {
-        // For single-point trekking, create circular route
-        const distance = llmRoute.day1?.distance || 10; // Default 10km
-        routingResult = await routingService.getCircularRoute(
-          waypointCoordinates[0],
-          distance
-        );
-        routingMethod = "circular_routing";
+      if (tripType === "trekking") {
+        if (waypointCoordinates.length === 1) {
+          // For single-point trekking, create circular route
+          const distance = llmRoute.day1?.distance || 10; // Default 10km
+          routingResult = await routingService.getCircularRoute(
+            waypointCoordinates[0],
+            distance
+          );
+          routingMethod = "circular_routing";
+        } else {
+          // For multi-point trekking, force circular route by returning to start
+          const trekkingWaypoints = [...waypointCoordinates];
+          // Ensure it's circular by adding start point as end point if not already there
+          const startPoint = trekkingWaypoints[0];
+          const endPoint = trekkingWaypoints[trekkingWaypoints.length - 1];
+          const distanceToStart = this.calculateDistanceBetweenCoords(startPoint, endPoint);
+          
+          // Only add start point if end point is more than 100m away from start
+          if (distanceToStart > 0.1) {
+            trekkingWaypoints.push(startPoint);
+          }
+          
+          routingResult = await routingService.getRouteCoordinates(
+            trekkingWaypoints,
+            tripType
+          );
+          routingMethod = "circular_trekking_routing";
+        }
       } else {
-        // For multi-point routes (cycling or multi-waypoint trekking)
+        // For cycling routes (multi-point)
         routingResult = await routingService.getRouteCoordinates(
           waypointCoordinates,
           tripType
@@ -897,6 +919,28 @@ REMEMBER:
     }
 
     return `${cleanLocation}, ${country}`;
+  }
+
+  /**
+   * Calculate distance between two coordinate pairs
+   * @param {Array} coord1 - [lat, lng]
+   * @param {Array} coord2 - [lat, lng] 
+   * @returns {number} Distance in kilometers
+   */
+  calculateDistanceBetweenCoords(coord1, coord2) {
+    const R = 6371; // Earth's radius in km
+    const dLat = ((coord2[0] - coord1[0]) * Math.PI) / 180;
+    const dLng = ((coord2[1] - coord1[1]) * Math.PI) / 180;
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((coord1[0] * Math.PI) / 180) *
+        Math.cos((coord2[0] * Math.PI) / 180) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
   }
 
   /**

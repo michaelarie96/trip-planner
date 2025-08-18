@@ -572,8 +572,22 @@ class GeocodingService {
 
     // If we have multiple waypoints, visit them and return to start
     if (geocodedPoints.length > 1) {
-      for (let i = 1; i < geocodedPoints.length; i++) {
-        const target = geocodedPoints[i].coordinates;
+      // CRITICAL FIX: Limit waypoint distances for realistic trekking
+      const filteredPoints = this.filterWaypointsForTrekking(geocodedPoints, 15); // Max 15km total
+      
+      for (let i = 1; i < filteredPoints.length; i++) {
+        const target = filteredPoints[i].coordinates;
+        const distanceToTarget = this.calculateDistance(
+          allCoordinates[allCoordinates.length - 1],
+          target
+        );
+        
+        // Skip waypoints that are too far apart for trekking
+        if (distanceToTarget > 5) { // Max 5km between waypoints
+          console.warn(`⚠️ Skipping waypoint ${filteredPoints[i].name}: too far (${distanceToTarget.toFixed(1)}km)`);
+          continue;
+        }
+        
         const segmentCoords = this.generateTrailLikeSegment(
           allCoordinates[allCoordinates.length - 1],
           target,
@@ -584,16 +598,26 @@ class GeocodingService {
       }
 
       // Return to start point to complete the circle
-      const returnCoords = this.generateTrailLikeSegment(
+      const distanceToStart = this.calculateDistance(
         allCoordinates[allCoordinates.length - 1],
-        startPoint,
-        8,
-        "trekking"
+        startPoint
       );
-      allCoordinates.push(...returnCoords.slice(1));
+      
+      // Only return to start if it's reasonable distance
+      if (distanceToStart <= 5) { // Max 5km back to start
+        const returnCoords = this.generateTrailLikeSegment(
+          allCoordinates[allCoordinates.length - 1],
+          startPoint,
+          8,
+          "trekking"
+        );
+        allCoordinates.push(...returnCoords.slice(1));
+      } else {
+        console.warn(`⚠️ Start point too far for return (${distanceToStart.toFixed(1)}km), ending near last waypoint`);
+      }
     } else {
-      // Single point - create a circular route around it
-      const circularCoords = this.generateCircularRoute(startPoint, 3, 12);
+      // Single point - create a circular route around it with limited radius
+      const circularCoords = this.generateCircularRoute(startPoint, 2, 12); // Smaller radius for realistic trekking
       allCoordinates.push(...circularCoords);
     }
 
@@ -601,6 +625,48 @@ class GeocodingService {
       `🥾 Generated trekking route with ${allCoordinates.length} coordinates`
     );
     return allCoordinates;
+  }
+
+  /**
+   * Filter waypoints to ensure realistic trekking distances
+   * @param {Array} geocodedPoints - Array of geocoded waypoints
+   * @param {number} maxTotalKm - Maximum total route distance
+   * @returns {Array} Filtered waypoints
+   */
+  filterWaypointsForTrekking(geocodedPoints, maxTotalKm = 15) {
+    if (geocodedPoints.length <= 2) {
+      return geocodedPoints; // Keep start and at most one waypoint
+    }
+
+    // Start with first waypoint (starting point)
+    const filtered = [geocodedPoints[0]];
+    let totalDistance = 0;
+    let currentPoint = geocodedPoints[0].coordinates;
+
+    // Add waypoints while staying within distance limit
+    for (let i = 1; i < geocodedPoints.length; i++) {
+      const nextPoint = geocodedPoints[i].coordinates;
+      const segmentDistance = this.calculateDistance(currentPoint, nextPoint);
+      
+      // Check if adding this waypoint would exceed limit
+      // (including estimated return to start)
+      const estimatedReturnDistance = this.calculateDistance(
+        nextPoint, 
+        geocodedPoints[0].coordinates
+      );
+      
+      if (totalDistance + segmentDistance + estimatedReturnDistance <= maxTotalKm) {
+        filtered.push(geocodedPoints[i]);
+        totalDistance += segmentDistance;
+        currentPoint = nextPoint;
+      } else {
+        console.warn(`⚠️ Waypoint filtering: Stopped at ${filtered.length - 1} waypoints to stay within ${maxTotalKm}km limit`);
+        break;
+      }
+    }
+
+    console.log(`📍 Filtered waypoints: ${geocodedPoints.length} → ${filtered.length} (estimated ${totalDistance.toFixed(1)}km)`);
+    return filtered;
   }
 
   /**
