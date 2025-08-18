@@ -548,6 +548,48 @@ REMEMBER:
         );
       }
 
+      // CRITICAL FIX: Validate waypoint distances for trekking routes
+      if (tripType === "trekking") {
+        const filteredWaypoints = this.filterWaypointsForTrekking(geocodedWaypoints, llmRoute.day1?.distance || 15);
+        
+        if (filteredWaypoints.length < 2) {
+          console.warn(`⚠️ After distance filtering: only ${filteredWaypoints.length} waypoints remain`);
+          // Fall back to circular route from first waypoint
+          if (filteredWaypoints.length >= 1) {
+            console.log("🔄 Falling back to circular route from first valid waypoint");
+            const distance = llmRoute.day1?.distance || 10;
+            routingResult = await routingService.getCircularRoute(
+              filteredWaypoints[0].coordinates,
+              distance
+            );
+            routingMethod = "filtered_circular_routing";
+            
+            const llmTotalDistance = this.calculateTotalDistanceFromLLM(llmRoute);
+            
+            return {
+              coordinates: routingResult.coordinates,
+              totalDistance: llmTotalDistance,
+              estimatedDuration: this.formatDuration(routingResult.duration, tripType),
+              difficulty: routingResult.difficulty,
+              metadata: {
+                method: routingMethod,
+                geocodedWaypoints: geocodedWaypoints.length,
+                filteredWaypoints: filteredWaypoints.length,
+                routingSource: routingResult.source,
+                routingProfile: routingResult.profile,
+                llmDistance: llmTotalDistance,
+                distanceSource: "llm_authoritative",
+                error: null,
+              },
+            };
+          }
+        } else {
+          // Update geocoded waypoints to use filtered ones
+          geocodedWaypoints.splice(0, geocodedWaypoints.length, ...filteredWaypoints);
+          console.log(`✓ Distance validation passed: using ${filteredWaypoints.length} filtered waypoints`);
+        }
+      }
+
       console.log(`Step 2: Using routing service for ${tripType} route...`);
 
       // Step 2: Use routing service to get real road/trail coordinates
@@ -1209,6 +1251,107 @@ REMEMBER:
 
     console.warn(`No coordinates found for "${country}", using default`);
     return [50.0, 10.0];
+  }
+
+  /**
+   * Filter waypoints to ensure they're within reasonable distance for trekking
+   * @param {Array} geocodedWaypoints - Array of geocoded waypoint objects
+   * @param {number} maxTotalDistance - Maximum total distance for the route (km)
+   * @returns {Array} Filtered waypoints that form a reasonable trekking route
+   */
+  filterWaypointsForTrekking(geocodedWaypoints, maxTotalDistance = 15) {
+    if (!geocodedWaypoints || geocodedWaypoints.length === 0) {
+      return [];
+    }
+
+    if (geocodedWaypoints.length === 1) {
+      return geocodedWaypoints;
+    }
+
+    const startPoint = geocodedWaypoints[0];
+    const filtered = [startPoint];
+    const maxSegmentDistance = 8; // Max 8km between waypoints
+    const maxRadiusFromStart = maxTotalDistance / 2; // Max distance from starting point
+
+    console.log(`🔍 Filtering waypoints - max total: ${maxTotalDistance}km, max segment: ${maxSegmentDistance}km, max radius: ${maxRadiusFromStart}km`);
+
+    for (let i = 1; i < geocodedWaypoints.length; i++) {
+      const waypoint = geocodedWaypoints[i];
+      const lastFiltered = filtered[filtered.length - 1];
+      
+      // Check distance from last filtered waypoint
+      const segmentDistance = this.calculateDistanceBetweenCoords(
+        lastFiltered.coordinates,
+        waypoint.coordinates
+      );
+      
+      // Check distance from starting point
+      const distanceFromStart = this.calculateDistanceBetweenCoords(
+        startPoint.coordinates,
+        waypoint.coordinates
+      );
+
+      console.log(`📍 ${waypoint.name}: ${segmentDistance.toFixed(1)}km from prev, ${distanceFromStart.toFixed(1)}km from start`);
+
+      // Include waypoint if it's within reasonable distances
+      if (segmentDistance <= maxSegmentDistance && distanceFromStart <= maxRadiusFromStart) {
+        filtered.push(waypoint);
+        console.log(`✓ Included waypoint: ${waypoint.name}`);
+      } else {
+        console.log(`✗ Excluded waypoint: ${waypoint.name} (segment: ${segmentDistance.toFixed(1)}km, radius: ${distanceFromStart.toFixed(1)}km)`);
+      }
+    }
+
+    // Estimate total distance of filtered route
+    let totalDistance = 0;
+    for (let i = 0; i < filtered.length - 1; i++) {
+      totalDistance += this.calculateDistanceBetweenCoords(
+        filtered[i].coordinates,
+        filtered[i + 1].coordinates
+      );
+    }
+    
+    // Add return distance to start (for circular route)
+    if (filtered.length > 1) {
+      totalDistance += this.calculateDistanceBetweenCoords(
+        filtered[filtered.length - 1].coordinates,
+        filtered[0].coordinates
+      );
+    }
+
+    console.log(`📏 Filtered route estimated distance: ${totalDistance.toFixed(1)}km (${filtered.length} waypoints)`);
+
+    // If still too long, keep only the closest waypoints
+    if (totalDistance > maxTotalDistance && filtered.length > 2) {
+      console.log(`⚠️ Route still too long, keeping only closest waypoints`);
+      const closest = [startPoint];
+      
+      // Sort remaining waypoints by distance from start
+      const sortedByDistance = filtered.slice(1).sort((a, b) => {
+        const distA = this.calculateDistanceBetweenCoords(startPoint.coordinates, a.coordinates);
+        const distB = this.calculateDistanceBetweenCoords(startPoint.coordinates, b.coordinates);
+        return distA - distB;
+      });
+      
+      // Add closest waypoints until we approach the distance limit
+      let runningDistance = 0;
+      for (const waypoint of sortedByDistance) {
+        const distanceToAdd = this.calculateDistanceBetweenCoords(
+          closest[closest.length - 1].coordinates,
+          waypoint.coordinates
+        );
+        
+        if (runningDistance + distanceToAdd < maxTotalDistance * 0.8) {
+          closest.push(waypoint);
+          runningDistance += distanceToAdd;
+        }
+      }
+      
+      console.log(`✓ Final filtered route: ${closest.length} waypoints, ~${runningDistance.toFixed(1)}km`);
+      return closest;
+    }
+
+    return filtered;
   }
 
   /**

@@ -344,42 +344,61 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
 
   const markers = generateEnhancedMarkers(route, formData);
 
+
   /**
-   * Generate enhanced polylines with day-specific colors and better styling
+   * Generate simple outbound/return polylines for trekking routes
    */
-  const generateEnhancedPolylines = (route, formData) => {
+  const generateSimpleTrekkingPolylines = (route, formData) => {
     const polylines = [];
     const coordinates = route.coordinates;
     const tripType = formData?.tripType;
 
-    // Define enhanced color schemes
-    const colorSchemes = {
-      cycling: {
-        day1: {
-          color: "#f97316", // Orange for Day 1
+    if (!coordinates || coordinates.length < 2) return polylines;
+
+    if (tripType === "trekking") {
+      // Split route into outbound and return halves
+      const midPoint = Math.floor(coordinates.length / 2);
+      const outbound = coordinates.slice(0, midPoint + 1);
+      const returnPath = coordinates.slice(midPoint);
+
+      // Create outbound path (green, solid)
+      if (outbound.length > 1) {
+        polylines.push({
+          id: "trekking-outbound",
+          coordinates: outbound,
+          color: "#22c55e", // Green for outbound
           weight: 5,
-          opacity: 0.8,
-          dashArray: null,
-        },
-        day2: {
-          color: "#dc2626", // Red for Day 2
-          weight: 5,
-          opacity: 0.8,
-          dashArray: null,
-        },
-      },
-      trekking: {
-        main: {
-          color: "#16a34a", // Green for trekking
+          opacity: 0.9,
+          dashArray: null, // Solid line
+          pathType: "outbound",
+          metadata: {
+            direction: "Outbound",
+            description: "First half of the route"
+          }
+        });
+      }
+
+      // Create return path (blue, dashed) - no coordinate offsetting
+      if (returnPath.length > 1) {
+        polylines.push({
+          id: "trekking-return",
+          coordinates: returnPath, // Use original coordinates for road accuracy
+          color: "#3b82f6", // Blue for return
           weight: 4,
           opacity: 0.8,
-          dashArray: "10, 5", // Dashed line for trails
-        },
-      },
-    };
+          dashArray: "10, 10", // Dashed line to distinguish from outbound
+          pathType: "return",
+          metadata: {
+            direction: "Return",
+            description: "Second half of the route"
+          }
+        });
+      }
 
-    if (route.dailyRoutes && route.dailyRoutes.length > 0) {
-      // Split main coordinates between daily routes with enhanced styling
+      console.log(`Generated simple trekking route: outbound (${outbound.length}) + return (${returnPath.length}) paths`);
+
+    } else if (tripType === "cycling" && route.dailyRoutes) {
+      // Keep existing cycling logic
       const totalPoints = coordinates.length;
       const pointsPerDay = Math.floor(totalPoints / route.dailyRoutes.length);
 
@@ -393,25 +412,13 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
         const dayCoordinates = coordinates.slice(startIndex, endIndex + 1);
 
         if (dayCoordinates.length > 1) {
-          let segmentStyle;
-
-          if (tripType === "cycling") {
-            // Different colors for each cycling day
-            segmentStyle =
-              dayIndex === 0
-                ? colorSchemes.cycling.day1
-                : colorSchemes.cycling.day2;
-          } else {
-            // Consistent styling for trekking
-            segmentStyle = colorSchemes.trekking.main;
-          }
-
           polylines.push({
-            id: `day-${day.day}`,
+            id: `cycling-day-${day.day}`,
             coordinates: dayCoordinates,
-            ...segmentStyle,
+            color: dayIndex === 0 ? "#f97316" : "#dc2626",
+            weight: 5,
+            opacity: 0.8,
             day: day.day,
-            dayIndex: dayIndex,
             tripType: tripType,
             metadata: {
               startPoint: day.startPoint,
@@ -422,46 +429,47 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
         }
       });
     } else {
-      // Fallback: use main coordinates with trip-appropriate styling
-      if (coordinates.length > 1) {
-        const style =
-          tripType === "cycling"
-            ? colorSchemes.cycling.day1
-            : colorSchemes.trekking.main;
-
-        polylines.push({
-          id: "main-route",
-          coordinates: coordinates,
-          ...style,
-          tripType: tripType,
-        });
-      }
+      // Fallback for simple routes
+      polylines.push({
+        id: "main-route",
+        coordinates: coordinates,
+        color: tripType === "cycling" ? "#f97316" : "#16a34a",
+        weight: 4,
+        opacity: 0.8,
+        tripType: tripType,
+      });
     }
 
-    console.log(
-      `Generated ${polylines.length} enhanced polyline segments for ${tripType} route`
-    );
     return polylines;
   };
 
-  const polylines = generateEnhancedPolylines(route, formData);
+  const polylines = generateSimpleTrekkingPolylines(route, formData);
 
   /**
-   * Enhanced popup content for route segments
+   * Simple popup content for route segments
    */
   const createSegmentPopupContent = (polyline) => {
-    const { day, tripType, metadata } = polyline;
+    const { day, tripType, metadata, pathType } = polyline;
 
     return `
     <div class="text-center min-w-[200px]">
       <h4 class="font-semibold text-gray-900 mb-2">
-        ${day ? `Day ${day} Route` : "Route Segment"}
+        ${pathType ? `${metadata?.direction} Path` : (day ? `Day ${day} Route` : "Route Segment")}
       </h4>
       <div class="space-y-1 text-sm">
         <div class="flex justify-between">
           <span class="text-gray-600">Type:</span>
           <span class="font-medium capitalize">${tripType}</span>
         </div>
+        ${
+          metadata?.description
+            ? `
+          <div class="text-sm text-gray-600 mt-2">
+            ${metadata.description}
+          </div>
+        `
+            : ""
+        }
         ${
           metadata?.distance
             ? `
@@ -593,13 +601,26 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
             <h3 className="text-lg font-semibold text-gray-900">Route Map</h3>
           </div>
           <div className="flex items-center space-x-4 text-sm text-gray-600">
-            <div className="flex items-center space-x-1">
-              <div
-                className="w-4 h-1 rounded"
-                style={{ backgroundColor: routeStyles.color }}
-              />
-              <span>{formData?.tripType || "route"}</span>
-            </div>
+            {formData?.tripType === "trekking" ? (
+              <div className="flex items-center space-x-3">
+                <div className="flex items-center space-x-1">
+                  <div className="w-4 h-1 bg-green-500 rounded" />
+                  <span className="text-xs">outbound</span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <div className="w-4 h-1 border-t-2 border-dashed border-blue-500" />
+                  <span className="text-xs">return</span>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-1">
+                <div
+                  className="w-4 h-1 rounded"
+                  style={{ backgroundColor: routeStyles.color }}
+                />
+                <span>{formData?.tripType || "route"}</span>
+              </div>
+            )}
             <div className="flex items-center space-x-1">
               <span>📍</span>
               <span>{markers.length} markers</span>
@@ -672,14 +693,12 @@ const MapDisplay = ({ routeData, formData, className = "" }) => {
             </Marker>
           ))}
 
+
           {/* Auto-fit bounds to show entire route */}
           <FitBounds coordinates={coordinates} />
         </MapContainer>
 
-        {/* Map Loading Overlay (if needed) */}
-        <div className="absolute top-4 right-4 bg-white rounded-lg shadow-sm border border-gray-200 px-3 py-2 text-sm text-gray-600">
-          {coordinates.length} route points
-        </div>
+
       </div>
 
       {/* Map Footer with Stats */}
