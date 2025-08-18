@@ -1,4 +1,4 @@
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 import { Loader2 } from "lucide-react";
 
@@ -29,15 +29,14 @@ const ProtectedRoute = ({ children }) => {
     );
   }
 
-  // If user is authenticated, redirect to home page
-  if (isAuthenticated) {
-    console.log("User already authenticated, redirecting to home");
-
-    return <Navigate to="/" replace />;
+  // If user is NOT authenticated, redirect to login
+  if (!isAuthenticated) {
+    console.log("User not authenticated, redirecting to login");
+    return <Navigate to="/login" replace />;
   }
 
-  // User is not authenticated, render the public component (login/register)
-  console.log("User not authenticated, rendering public route");
+  // User is authenticated, render the protected component
+  console.log("User authenticated, rendering protected route");
   return children;
 };
 
@@ -71,7 +70,7 @@ export const PublicRoute = ({ children }) => {
   // If user is authenticated, redirect to intended destination or default route
   if (isAuthenticated) {
     // Check if there was an intended destination stored in location state
-    const from = location.state?.from?.pathname || "/plan";
+    const from = location.state?.from?.pathname || "/";
     console.log("User already authenticated, redirecting to:", from);
 
     return <Navigate to={from} replace />;
