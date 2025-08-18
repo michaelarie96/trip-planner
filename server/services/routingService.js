@@ -386,20 +386,25 @@ class RoutingService {
   generateCircularWaypoints(center, distanceKm, direction = "clockwise") {
     const waypoints = [center]; // Start at center
 
-    // Calculate radius based on desired distance (approximate)
-    const radiusKm = (distanceKm / (2 * Math.PI)) * 1.5; // Factor for more realistic paths
+    // Calculate radius based on desired distance
+    // For a proper loop, we want waypoints spread around the perimeter
+    const numWaypoints = 6; // More waypoints for better loop shape
+    const circumference = distanceKm * 0.8; // Account for actual trail distance vs straight lines
+    const radiusKm = circumference / (2 * Math.PI);
 
     // Convert radius to degrees
     const radiusLat = radiusKm / 111.0;
-    const radiusLng =
-      radiusKm / (111.0 * Math.cos((center[0] * Math.PI) / 180));
+    const radiusLng = radiusKm / (111.0 * Math.cos((center[0] * Math.PI) / 180));
 
-    // Generate 4-6 waypoints around the circle
-    const numWaypoints = 5;
+    // Generate waypoints in a circle/polygon pattern
+    // Start from north and go around
+    const startAngle = -Math.PI / 2; // Start from north (top)
     const angleStep = (2 * Math.PI) / numWaypoints;
-    const startAngle = Math.random() * 2 * Math.PI; // Random starting angle
 
-    for (let i = 1; i <= numWaypoints; i++) {
+    // Create waypoints that form a proper polygon, not visiting center each time
+    const circularWaypoints = [];
+    
+    for (let i = 0; i < numWaypoints; i++) {
       let angle = startAngle + angleStep * i;
 
       // Reverse angle for counterclockwise
@@ -407,15 +412,45 @@ class RoutingService {
         angle = startAngle - angleStep * i;
       }
 
-      const lat = center[0] + radiusLat * Math.sin(angle);
-      const lng = center[1] + radiusLng * Math.cos(angle);
+      // Add some variation to make it more natural
+      const radiusVariation = 0.9 + Math.random() * 0.2; // 90-110% of radius
+      const adjustedRadiusLat = radiusLat * radiusVariation;
+      const adjustedRadiusLng = radiusLng * radiusVariation;
 
-      waypoints.push([lat, lng]);
+      const lat = center[0] + adjustedRadiusLat * Math.sin(angle);
+      const lng = center[1] + adjustedRadiusLng * Math.cos(angle);
+
+      circularWaypoints.push([lat, lng]);
+    }
+
+    // Create the route: start from center, visit all perimeter points, return to center
+    // But arrange them to form a proper loop, not star pattern
+    
+    // Find closest perimeter point to center
+    let closestIdx = 0;
+    let minDist = Infinity;
+    for (let i = 0; i < circularWaypoints.length; i++) {
+      const dist = this.calculateDistance(center, circularWaypoints[i]);
+      if (dist < minDist) {
+        minDist = dist;
+        closestIdx = i;
+      }
+    }
+
+    // Build route: center -> closest point -> around the circle -> back to center
+    waypoints.push(circularWaypoints[closestIdx]);
+    
+    // Add rest of circular waypoints in order
+    for (let i = 1; i < numWaypoints; i++) {
+      const idx = (closestIdx + i) % numWaypoints;
+      waypoints.push(circularWaypoints[idx]);
     }
 
     // Return to start
     waypoints.push(center);
 
+    console.log(`🔄 Generated ${waypoints.length} waypoints for ${distanceKm}km circular route`);
+    
     return waypoints;
   }
 

@@ -308,7 +308,11 @@ CRITICAL CONSTRAINTS (MUST FOLLOW):
 ROUTE REQUIREMENTS:
 - Start point name MUST EXACTLY MATCH end point name
 - Follow actual hiking trails, walking paths, or nature routes
-- Include 3-4 real landmarks/waypoints that create a logical circular path
+- CRITICAL: Create a TRUE LOOP where you visit different places and return via a DIFFERENT path
+- Include 4-5 real landmarks/waypoints that form a CIRCULAR path, not a line
+- Waypoints should be arranged in a rough circle/square/triangle around the starting point
+- AVOID linear arrangements (A→B→C then C→B→A) - instead aim for A→B→C→D→A
+- Each waypoint should be roughly equidistant from the center, creating a loop shape
 - Use realistic hiking distances and times for the terrain
 
 LOCATION SPECIFICITY:
@@ -561,20 +565,24 @@ REMEMBER:
           );
           routingMethod = "circular_routing";
         } else {
-          // For multi-point trekking, force circular route by returning to start
-          const trekkingWaypoints = [...waypointCoordinates];
+          // For multi-point trekking, optimize waypoint order for a proper loop
+          const optimizedWaypoints = this.optimizeWaypointsForLoop(
+            waypointCoordinates,
+            geocodedWaypoints
+          );
+          
           // Ensure it's circular by adding start point as end point if not already there
-          const startPoint = trekkingWaypoints[0];
-          const endPoint = trekkingWaypoints[trekkingWaypoints.length - 1];
+          const startPoint = optimizedWaypoints[0];
+          const endPoint = optimizedWaypoints[optimizedWaypoints.length - 1];
           const distanceToStart = this.calculateDistanceBetweenCoords(startPoint, endPoint);
           
           // Only add start point if end point is more than 100m away from start
           if (distanceToStart > 0.1) {
-            trekkingWaypoints.push(startPoint);
+            optimizedWaypoints.push(startPoint);
           }
           
           routingResult = await routingService.getRouteCoordinates(
-            trekkingWaypoints,
+            optimizedWaypoints,
             tripType
           );
           routingMethod = "circular_trekking_routing";
@@ -941,6 +949,143 @@ REMEMBER:
 
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
+  }
+
+  /**
+   * Optimize waypoint order to create a proper circular loop instead of out-and-back
+   * @param {Array} waypointCoords - Array of [lat, lng] coordinates
+   * @param {Array} geocodedWaypoints - Original waypoint data with names
+   * @returns {Array} Reordered waypoint coordinates for optimal loop
+   */
+  optimizeWaypointsForLoop(waypointCoords, geocodedWaypoints) {
+    if (waypointCoords.length <= 2) {
+      return waypointCoords; // Can't optimize with 2 or fewer points
+    }
+
+    console.log("🔄 Optimizing waypoint order for proper loop formation...");
+
+    // Keep the first waypoint as start
+    const startPoint = waypointCoords[0];
+    const remainingPoints = waypointCoords.slice(1);
+
+    // Calculate the centroid of all points
+    const centroid = this.calculateCentroid(waypointCoords);
+    console.log(`📍 Route centroid: [${centroid[0].toFixed(6)}, ${centroid[1].toFixed(6)}]`);
+
+    // Sort remaining points by angle from centroid (creates circular arrangement)
+    const pointsWithAngles = remainingPoints.map(point => {
+      const angle = Math.atan2(
+        point[1] - centroid[1],
+        point[0] - centroid[0]
+      );
+      return { point, angle };
+    });
+
+    // Sort by angle to create a circular path
+    pointsWithAngles.sort((a, b) => a.angle - b.angle);
+
+    // Find the point closest to the start to begin the loop
+    let bestStartIdx = 0;
+    let minDistance = Infinity;
+    
+    for (let i = 0; i < pointsWithAngles.length; i++) {
+      const dist = this.calculateDistanceBetweenCoords(startPoint, pointsWithAngles[i].point);
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestStartIdx = i;
+      }
+    }
+
+    // Reorder to start from the closest point and go around the circle
+    const reorderedPoints = [
+      startPoint,
+      ...pointsWithAngles.slice(bestStartIdx),
+      ...pointsWithAngles.slice(0, bestStartIdx)
+    ].map(p => p.point || p);
+
+    // Check if this creates a better loop than the original order
+    const originalLoopScore = this.calculateLoopQualityScore(waypointCoords);
+    const optimizedLoopScore = this.calculateLoopQualityScore(reorderedPoints);
+
+    console.log(`📊 Loop quality scores - Original: ${originalLoopScore.toFixed(2)}, Optimized: ${optimizedLoopScore.toFixed(2)}`);
+
+    if (optimizedLoopScore > originalLoopScore) {
+      console.log("✅ Using optimized waypoint order for better loop");
+      return reorderedPoints;
+    } else {
+      console.log("ℹ️ Keeping original waypoint order");
+      return waypointCoords;
+    }
+  }
+
+  /**
+   * Calculate the centroid of a set of coordinates
+   * @param {Array} coordinates - Array of [lat, lng] coordinates
+   * @returns {Array} [lat, lng] of centroid
+   */
+  calculateCentroid(coordinates) {
+    const sumLat = coordinates.reduce((sum, coord) => sum + coord[0], 0);
+    const sumLng = coordinates.reduce((sum, coord) => sum + coord[1], 0);
+    return [sumLat / coordinates.length, sumLng / coordinates.length];
+  }
+
+  /**
+   * Calculate a quality score for how "loop-like" a path is
+   * Higher score = better loop (less retracing)
+   * @param {Array} waypoints - Ordered array of waypoint coordinates
+   * @returns {number} Loop quality score (0-100)
+   */
+  calculateLoopQualityScore(waypoints) {
+    if (waypoints.length < 3) return 0;
+
+    let score = 100;
+    const n = waypoints.length;
+
+    // Penalize if waypoints are too linear
+    for (let i = 1; i < n - 1; i++) {
+      const angle = this.calculateAngle(
+        waypoints[i - 1],
+        waypoints[i],
+        waypoints[i + 1]
+      );
+      
+      // Angles close to 180° indicate linear arrangement (bad for loops)
+      if (Math.abs(angle - 180) < 30) {
+        score -= 20; // Heavy penalty for near-straight lines
+      }
+    }
+
+    // Reward if waypoints form a polygon-like shape
+    const centroid = this.calculateCentroid(waypoints);
+    const distances = waypoints.map(w => this.calculateDistanceBetweenCoords(w, centroid));
+    const avgDistance = distances.reduce((a, b) => a + b, 0) / distances.length;
+    const variance = distances.reduce((sum, d) => sum + Math.pow(d - avgDistance, 2), 0) / distances.length;
+    
+    // Lower variance = more circular arrangement (good)
+    const normalizedVariance = variance / (avgDistance * avgDistance);
+    if (normalizedVariance < 0.2) {
+      score += 10; // Bonus for circular arrangement
+    }
+
+    return Math.max(0, Math.min(100, score));
+  }
+
+  /**
+   * Calculate angle between three points
+   * @param {Array} p1 - First point [lat, lng]
+   * @param {Array} p2 - Vertex point [lat, lng]
+   * @param {Array} p3 - Third point [lat, lng]
+   * @returns {number} Angle in degrees
+   */
+  calculateAngle(p1, p2, p3) {
+    const v1 = [p1[0] - p2[0], p1[1] - p2[1]];
+    const v2 = [p3[0] - p2[0], p3[1] - p2[1]];
+    
+    const dot = v1[0] * v2[0] + v1[1] * v2[1];
+    const det = v1[0] * v2[1] - v1[1] * v2[0];
+    
+    const angle = Math.atan2(det, dot) * (180 / Math.PI);
+    return Math.abs(angle);
   }
 
   /**
